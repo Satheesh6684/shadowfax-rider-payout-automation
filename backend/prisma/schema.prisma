@@ -144,6 +144,10 @@ model SpecialIncentive {
 }
 
 // ---------- Module 2: Payment Configuration (SRS §14) ----------
+// This is the ORIGINAL SRS's concept: payment categories auto-detected from
+// a weekly Valinor upload, toggled include/exclude per week. Left untouched —
+// no repository/service/controller exists for it yet. It'll likely get wired
+// up once Upload Center's Valinor upload is built.
 model PaymentConfiguration {
   id            String   @id @default(uuid())
   weekStartDate DateTime
@@ -157,6 +161,46 @@ model PaymentConfiguration {
 
   @@unique([weekStartDate, paymentType])
   @@map("payment_configuration")
+}
+
+// ---------- Payment Type master registry (this implementation phase) ----------
+// A manually-curated catalogue of payment types the Calculation Engine will
+// reference later (Order Incentive, Weekly Incentive, Manual Incentive,
+// Special Incentive, Recovery, Penalty). Same versioned-edit + soft-delete
+// pattern as WeeklyRateCard, for consistency.
+model PaymentType {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  category          String // ORDER_INCENTIVE | WEEKLY_INCENTIVE | MANUAL_INCENTIVE | SPECIAL_INCENTIVE | RECOVERY | PENALTY
+  calculationMethod String // FIXED_AMOUNT | PERCENTAGE | FORMULA_BASED
+  priority          Int      @default(0)
+  status            String   @default("ACTIVE") // ACTIVE | INACTIVE | DELETED
+  description       String?  @db.Text
+  version           Int      @default(1)
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  history PaymentTypeHistory[]
+
+  @@index([category])
+  @@index([status])
+  @@map("payment_types")
+}
+
+model PaymentTypeHistory {
+  id            String   @id @default(uuid())
+  paymentTypeId String
+  version       Int
+  changeSummary String
+  changedBy     String
+  changedAt     DateTime @default(now())
+  snapshot      Json
+
+  paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
+
+  @@index([paymentTypeId])
+  @@map("payment_type_history")
 }
 
 // ---------- Module 3: Upload Center (SRS §24) ----------

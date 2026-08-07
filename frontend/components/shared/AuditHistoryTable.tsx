@@ -3,30 +3,16 @@ import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
+type BadgeTone = "neutral" | "primary" | "success" | "warning" | "danger";
+
 interface AuditHistoryTableProps {
   entries: AuditLogEntry[];
   isLoading: boolean;
+  actionLabels: Record<string, string>;
+  actionTones: Record<string, BadgeTone>;
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  RATE_CARD_CREATED: "Created",
-  RATE_CARD_RECREATED: "Recreated",
-  RATE_CARD_UPDATED: "Updated",
-  RATE_CARD_DELETED: "Deleted",
-  RATE_CARD_WEEK_COPIED: "Week Copied",
-  RATE_CARD_WEEK_LOCKED: "Week Locked",
-};
-
-const ACTION_TONE: Record<string, "success" | "primary" | "danger" | "warning"> = {
-  RATE_CARD_CREATED: "success",
-  RATE_CARD_RECREATED: "success",
-  RATE_CARD_UPDATED: "primary",
-  RATE_CARD_DELETED: "danger",
-  RATE_CARD_WEEK_COPIED: "primary",
-  RATE_CARD_WEEK_LOCKED: "warning",
-};
-
-export function AuditHistoryTable({ entries, isLoading }: AuditHistoryTableProps) {
+export function AuditHistoryTable({ entries, isLoading, actionLabels, actionTones }: AuditHistoryTableProps) {
   if (isLoading) {
     return (
       <div className="rounded-xl border border-border bg-surface p-4 shadow-soft">
@@ -58,8 +44,8 @@ export function AuditHistoryTable({ entries, isLoading }: AuditHistoryTableProps
           {entries.map((entry) => (
             <tr key={entry.id} className="border-b border-border last:border-0 align-top">
               <td className="px-4 py-3">
-                <Badge tone={ACTION_TONE[entry.action] ?? "primary"}>
-                  {ACTION_LABELS[entry.action] ?? entry.action}
+                <Badge tone={actionTones[entry.action] ?? "primary"}>
+                  {actionLabels[entry.action] ?? entry.action}
                 </Badge>
               </td>
               <td className="px-4 py-3 font-mono text-xs">{entry.userId ?? "—"}</td>

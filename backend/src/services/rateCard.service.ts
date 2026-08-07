@@ -5,17 +5,10 @@ import { MasterDataService } from "./masterData.service";
 import { AuditLogService } from "./auditLog.service";
 import { parseWeekStart, weekEndFromStart } from "../utils/week";
 import { ConflictError, NotFoundError, ValidationError } from "../utils/AppError";
+import type { Actor } from "../types/actor";
 import type { CreateRateCardInput, UpdateRateCardInput } from "../validators/rateCard.validators";
 
 const MODULE = "RATE_CARD";
-
-/** Who performed the action — threaded through to both the record's own
- * createdBy/changedBy field (human-readable) and the audit log's userId
- * (a real FK back to users). */
-export interface Actor {
-  userId: string;
-  email: string;
-}
 
 /** Strips relations/internal fields so history snapshots and audit diffs stay clean. */
 function toSnapshot(rateCard: {

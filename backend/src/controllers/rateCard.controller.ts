@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
-import { RateCardService, Actor } from "../services/rateCard.service";
+import { RateCardService } from "../services/rateCard.service";
+import type { Actor } from "../types/actor";
 import { MasterDataService } from "../services/masterData.service";
 import { UnauthorizedError } from "../utils/AppError";
 import type {

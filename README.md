@@ -1,74 +1,66 @@
 # Shadowfax Amazon Rider Payout Arrears Management System
 
-Phase 0 foundation + Phase 1 (Rate Card Management), built from the SRS v1.1
-plus a follow-up implementation brief for the module itself.
+Phase 0 (foundation) + Phase 1 (Rate Card Management) + Payment
+Configuration, built from the SRS v1.1 plus follow-up implementation briefs.
 
 ## What's actually here
 
 **Backend** (`/backend` — Node.js + Express + TypeScript + Prisma/MySQL)
-- Prisma schema covering the core tables from SRS §15.3, with weekly
-  versioning and history/audit tables built in from day one
-- Centralized error handling, centralized Zod validation, JWT auth
-  (single admin login), `AuditLogService` as the one write path for audit
-  history, repository-pattern data access
-- **Rate Card Management module, fully implemented:**
-  - `WeeklyRateCard` — one live row per store per week; `status` field
-    (ACTIVE / LOCKED / DELETED) drives Lock Week and soft-delete
-  - `RateCardHistory` — every edit snapshots the pre-edit values before
-    overwriting, tagged with version/changedBy/changedAt — this is what the
-    Version History page reads
-  - `Store` / `City` — normalized master data; the create form's plain
-    city/store-name/store-code text resolves to these via find-or-create,
-    with a conflict error if a store code already maps to a different name
-  - Full CRUD + Copy Previous Week (clones a whole week, blocked if the
-    target week already has records) + Lock Week (bulk status flip, blocked
-    if already locked) + Version History + module-scoped Audit Logs
-  - Every mutation is validated (Zod), authorized (`requireAuth`), and
-    audit-logged with proper user attribution
-  - `prisma/seed.ts` creates an initial admin user — needed before `/login`
-    will work at all
+- Phase 0 foundation: Prisma schema, centralized error handling/validation,
+  JWT auth (single admin), `AuditLogService`, repository pattern
+- **Rate Card Management** — full CRUD, versioned edits, Copy Previous Week,
+  Lock Week, version history, module-scoped audit logs
+- **Payment Configuration** — a `PaymentType` master registry (name,
+  category, calculation method, priority, enable/disable), same
+  versioned-edit + soft-delete + audit pattern as Rate Card. Endpoints:
+  `GET/POST /payment-types`, `GET/PUT/DELETE /payment-types/:id`,
+  `PATCH /payment-types/:id/status`, `GET /payment-types/:id/history`,
+  `GET /payment-types/audit-logs`, `GET /payment-types/active` (used by
+  other modules that need the live catalogue, not a paginated page of it).
+  A shared `Actor` type (`src/types/actor.ts`) now carries user attribution
+  across every module's service layer, instead of living inside
+  `rateCard.service.ts`.
+- The *original* SRS's `PaymentConfiguration` model (payment categories
+  auto-detected from a weekly Valinor upload) is still just a schema stub —
+  no repository/service/controller yet. Expect it to get wired up once
+  Upload Center's Valinor upload exists.
 
 **Frontend** (`/frontend` — Next.js 14 + TypeScript + Tailwind)
-- App shell unchanged from Phase 0 (sidebar, WeekPill, no dashboard)
-- **New: auth plumbing.** Phase 0 only built the backend's auth endpoints —
-  nothing called them. This adds `AuthContext` (JWT persisted to
-  localStorage), a `/login` page, and an `(app)` route group that gates
-  every other route behind sign-in and applies the AppShell. `/login` itself
-  intentionally has no sidebar.
-- **Rate Card Management pages:** `/rate-card` (table, filters, pagination,
-  copy/lock/delete), `/rate-card/new`, `/rate-card/[id]/edit`,
-  `/rate-card/[id]/history`, `/rate-card/audit`
-- Reusable UI primitives added: `Button`, `Badge`/`StatusBadge`, `Modal`,
-  `ConfirmDialog`, `Skeleton`, `Toast` (success/error notifications) — none
-  of these existed in Phase 0 and everything in the module builds on them
-- CSV/Excel export runs client-side via SheetJS against the currently
-  loaded table data (no new backend endpoint needed for this)
+- Auth plumbing, app shell, and Rate Card Management pages as before
+- **Payment Configuration**: `/payment-configuration` (list, search, filter
+  by category/status, pagination, create/edit/history modals, enable-disable
+  toggle, delete) and `/payment-configuration/audit`
+- `components/shared/AuditHistoryTable.tsx` — the audit table used to be
+  Rate-Card-specific; it's now generalized (action labels/tones passed as
+  props) so Payment Configuration reuses it instead of duplicating it. Both
+  modules' audit pages were updated to pass their own label/tone maps.
+- `apiClient` gained a `.patch()` method for the status-toggle endpoint
 
 Both `npm install` and a full `next build` / `tsc --noEmit` pass were run
-against this code — not just written, verified. One real bug caught and
-fixed along the way: a `jwt.sign` type mismatch in the Phase 0 auth
-middleware. The only outstanding gap is `prisma generate`, which needs to
+after adding Payment Configuration — same verification standard as Rate
+Card. One real bug was caught and fixed mid-build: an earlier edit to
+`lib/types.ts` had accidentally dropped the `RateCardFormValues` interface's
+opening line while inserting the new Payment Type types above it — caught by
+the build failing, not by inspection, which is exactly why this project
+verifies with a real compiler pass rather than just writing plausible-looking
+code. The only remaining known gap is `prisma generate`, which needs to
 download its engine binary from `binaries.prisma.sh` — unreachable from the
 sandbox this was built in, but should work normally for you.
 
 ## Scope decisions worth knowing about
 
-A few places where the implementation brief was ambiguous or went beyond
-what the backend supports — flagging these rather than silently guessing:
-
-- **"Copy" as a per-row table action** wasn't built — Copy Previous Week is
-  a whole-week clone (matches the brief's own COPY PREVIOUS WEEK section),
-  exposed as a page-level action, not a per-store row action.
-- **Delete is soft**, not a hard row delete — status flips to `DELETED` and
-  the record stays queryable through history/audit. This matches the
-  broader SRS's "never overwrite/lose historical records" principle and
-  avoids orphaning `RateCardHistory` rows.
-- **MG Type** is on the model and required, even though the newer brief's
-  field list omitted it — the original SRS explicitly requires it
-  (§13.6, §13.14), and Phase 0's schema already had it.
-- **Week end date isn't a form input** — only the Monday start date is
-  collected; the end date is always computed as start + 6 days
-  server-side, which also lets the API reject non-Monday starts cleanly.
+- **Payment Type "Delete" is soft**, not a hard row delete — status flips to
+  `DELETED`, same reasoning as Rate Card: avoids orphaning
+  `PaymentTypeHistory` rows and matches the SRS's "never lose historical
+  records" principle.
+- **Calculation Method values** (`FIXED_AMOUNT` / `PERCENTAGE` /
+  `FORMULA_BASED`) aren't specified anywhere in either brief — this is an
+  assumption, flagged rather than silently invented. Easy to extend since
+  it's a single enum in one validators file.
+- **Create/Edit uses a shared modal**, not separate pages like Rate Card —
+  Payment Type has no immutable identity field (no store+week equivalent),
+  so there was no reason to force a page navigation for what's simple
+  master-data CRUD.
 
 ## Running it locally
 
@@ -89,11 +81,9 @@ npm install
 npm run dev              # http://localhost:3000
 ```
 
-Sign in at `/login` with the seeded admin credentials (override via
-`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` env vars before seeding).
-
 ## What's next
 
-Phase 2 is Payment Configuration — see `Shadowfax_Implementation_Plan.md`
-for the full phase breakdown.
+Upload Center, then Validation Engine — see
+`Shadowfax_Implementation_Plan.md` for the full phase breakdown.
+
 

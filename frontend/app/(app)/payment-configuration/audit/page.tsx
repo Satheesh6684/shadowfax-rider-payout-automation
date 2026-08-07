@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { rateCardsApi } from "@/lib/api/rateCards";
+import { paymentTypesApi } from "@/lib/api/paymentTypes";
 import { ApiError } from "@/lib/api-client";
 import { AuditLogEntry } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
@@ -13,32 +13,32 @@ const PAGE_SIZE = 25;
 
 const ACTIONS = [
   { value: "", label: "All actions" },
-  { value: "RATE_CARD_CREATED", label: "Created" },
-  { value: "RATE_CARD_UPDATED", label: "Updated" },
-  { value: "RATE_CARD_DELETED", label: "Deleted" },
-  { value: "RATE_CARD_WEEK_COPIED", label: "Week Copied" },
-  { value: "RATE_CARD_WEEK_LOCKED", label: "Week Locked" },
+  { value: "PAYMENT_TYPE_CREATED", label: "Created" },
+  { value: "PAYMENT_TYPE_UPDATED", label: "Updated" },
+  { value: "PAYMENT_TYPE_DELETED", label: "Deleted" },
+  { value: "PAYMENT_TYPE_ENABLED", label: "Enabled" },
+  { value: "PAYMENT_TYPE_DISABLED", label: "Disabled" },
 ];
 
 const ACTION_LABELS: Record<string, string> = {
-  RATE_CARD_CREATED: "Created",
-  RATE_CARD_RECREATED: "Recreated",
-  RATE_CARD_UPDATED: "Updated",
-  RATE_CARD_DELETED: "Deleted",
-  RATE_CARD_WEEK_COPIED: "Week Copied",
-  RATE_CARD_WEEK_LOCKED: "Week Locked",
+  PAYMENT_TYPE_CREATED: "Created",
+  PAYMENT_TYPE_RECREATED: "Recreated",
+  PAYMENT_TYPE_UPDATED: "Updated",
+  PAYMENT_TYPE_DELETED: "Deleted",
+  PAYMENT_TYPE_ENABLED: "Enabled",
+  PAYMENT_TYPE_DISABLED: "Disabled",
 };
 
 const ACTION_TONES: Record<string, "success" | "primary" | "danger" | "warning"> = {
-  RATE_CARD_CREATED: "success",
-  RATE_CARD_RECREATED: "success",
-  RATE_CARD_UPDATED: "primary",
-  RATE_CARD_DELETED: "danger",
-  RATE_CARD_WEEK_COPIED: "primary",
-  RATE_CARD_WEEK_LOCKED: "warning",
+  PAYMENT_TYPE_CREATED: "success",
+  PAYMENT_TYPE_RECREATED: "success",
+  PAYMENT_TYPE_UPDATED: "primary",
+  PAYMENT_TYPE_DELETED: "danger",
+  PAYMENT_TYPE_ENABLED: "success",
+  PAYMENT_TYPE_DISABLED: "warning",
 };
 
-export default function RateCardAuditPage() {
+export default function PaymentConfigurationAuditPage() {
   const { token } = useAuth();
   const { showError } = useToast();
 
@@ -51,7 +51,7 @@ export default function RateCardAuditPage() {
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
-    rateCardsApi
+    paymentTypesApi
       .getAuditLogs({ action: action || undefined, page, pageSize: PAGE_SIZE }, token)
       .then((result) => {
         setEntries(result.items);
@@ -65,7 +65,7 @@ export default function RateCardAuditPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Audit History</h1>
-        <p className="mt-1 text-sm text-muted">Every create, update, delete, copy, and lock action, module-wide.</p>
+        <p className="mt-1 text-sm text-muted">Every create, update, delete, enable, and disable action.</p>
       </div>
 
       <select

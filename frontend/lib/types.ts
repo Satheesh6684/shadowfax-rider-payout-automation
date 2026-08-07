@@ -88,6 +88,50 @@ export interface PaginatedResult<T> {
   totalPages: number;
 }
 
+// ---------- Payment Configuration ----------
+export type PaymentCategory =
+  | "ORDER_INCENTIVE"
+  | "WEEKLY_INCENTIVE"
+  | "MANUAL_INCENTIVE"
+  | "SPECIAL_INCENTIVE"
+  | "RECOVERY"
+  | "PENALTY";
+
+export type CalculationMethod = "FIXED_AMOUNT" | "PERCENTAGE" | "FORMULA_BASED";
+export type PaymentTypeStatus = "ACTIVE" | "INACTIVE" | "DELETED";
+
+export interface PaymentType {
+  id: string;
+  name: string;
+  category: PaymentCategory;
+  calculationMethod: CalculationMethod;
+  priority: number;
+  status: PaymentTypeStatus;
+  description: string | null;
+  version: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentTypeHistoryEntry {
+  id: string;
+  paymentTypeId: string;
+  version: number;
+  changeSummary: string;
+  changedBy: string;
+  changedAt: string;
+  snapshot: {
+    name: string;
+    category: PaymentCategory;
+    calculationMethod: CalculationMethod;
+    priority: number;
+    status: PaymentTypeStatus;
+    description: string | null;
+    version: number;
+  };
+}
+
 export interface RateCardFormValues {
   cityName: string;
   storeName: string;
