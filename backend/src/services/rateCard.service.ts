@@ -1,0 +1,283 @@
+import { prisma } from "../config/prisma";
+import { RateCardFilters, RateCardRepository } from "../repositories/rateCard.repository";
+import { PaginationParams } from "../utils/pagination";
+import { MasterDataService } from "./masterData.service";
+import { AuditLogService } from "./auditLog.service";
+import { parseWeekStart, weekEndFromStart } from "../utils/week";
+import { ConflictError, NotFoundError, ValidationError } from "../utils/AppError";
+import type { CreateRateCardInput, UpdateRateCardInput } from "../validators/rateCard.validators";
+
+const MODULE = "RATE_CARD";
+
+/** Who performed the action — threaded through to both the record's own
+ * createdBy/changedBy field (human-readable) and the audit log's userId
+ * (a real FK back to users). */
+export interface Actor {
+  userId: string;
+  email: string;
+}
+
+/** Strips relations/internal fields so history snapshots and audit diffs stay clean. */
+function toSnapshot(rateCard: {
+  rcType: string;
+  mgType: string;
+  minimumOrders: number;
+  maximumOrders: number;
+  mgAmount: unknown;
+  variablePay: unknown;
+  weeklyIncentive: unknown;
+  orderIncentive: unknown;
+  status: string;
+  version: number;
+}) {
+  return {
+    rcType: rateCard.rcType,
+    mgType: rateCard.mgType,
+    minimumOrders: rateCard.minimumOrders,
+    maximumOrders: rateCard.maximumOrders,
+    mgAmount: rateCard.mgAmount,
+    variablePay: rateCard.variablePay,
+    weeklyIncentive: rateCard.weeklyIncentive,
+    orderIncentive: rateCard.orderIncentive,
+    status: rateCard.status,
+    version: rateCard.version,
+  };
+}
+
+export const RateCardService = {
+  async list(filters: RateCardFilters, pagination: PaginationParams) {
+    return RateCardRepository.list(filters, pagination);
+  },
+
+  async getByWeek(weekStartDateInput: string) {
+    const weekStartDate = parseWeekStart(weekStartDateInput);
+    return RateCardRepository.listByWeek(weekStartDate);
+  },
+
+  async getById(id: string) {
+    const rateCard = await RateCardRepository.findById(id);
+    if (!rateCard || rateCard.status === "DELETED") {
+      throw new NotFoundError("Rate card");
+    }
+    return rateCard;
+  },
+
+  async create(input: CreateRateCardInput, actor: Actor) {
+    const weekStartDate = parseWeekStart(input.weekStartDate);
+    const weekEndDate = weekEndFromStart(weekStartDate);
+
+    if (await RateCardRepository.isWeekLocked(weekStartDate)) {
+      throw new ConflictError("This week is locked. Unlock it before adding rate cards.");
+    }
+
+    const store = await MasterDataService.resolveStore({
+      cityName: input.cityName,
+      storeCode: input.storeCode,
+      storeName: input.storeName,
+    });
+
+    const existing = await RateCardRepository.findByStoreAndWeek(store.id, weekStartDate);
+
+    if (existing && existing.status !== "DELETED") {
+      throw new ConflictError(
+        `A rate card for store code "${input.storeCode}" already exists for this week. Edit the existing record instead.`
+      );
+    }
+
+    const data = {
+      rcType: input.rcType,
+      mgType: input.mgType,
+      minimumOrders: input.minimumOrders,
+      maximumOrders: input.maximumOrders,
+      mgAmount: input.mgAmount,
+      variablePay: input.variablePay,
+      weeklyIncentive: input.weeklyIncentive ?? null,
+      orderIncentive: input.orderIncentive ?? null,
+      status: "ACTIVE",
+      version: 1,
+      createdBy: actor.email,
+    };
+
+    const rateCard = existing
+      ? await RateCardRepository.update(existing.id, { ...data, weekStartDate, weekEndDate, storeId: store.id })
+      : await RateCardRepository.create({ ...data, weekStartDate, weekEndDate, storeId: store.id });
+
+    await AuditLogService.record({
+      userId: actor.userId,
+      module: MODULE,
+      action: existing ? "RATE_CARD_RECREATED" : "RATE_CARD_CREATED",
+      newValue: toSnapshot(rateCard),
+    });
+
+    return rateCard;
+  },
+
+  async update(id: string, input: UpdateRateCardInput, actor: Actor) {
+    const existing = await RateCardRepository.findById(id);
+    if (!existing || existing.status === "DELETED") {
+      throw new NotFoundError("Rate card");
+    }
+    if (existing.status === "LOCKED") {
+      throw new ConflictError("This rate card's week is locked and cannot be edited.");
+    }
+
+    // Store the PRE-edit values before they're overwritten, tagged with the
+    // version they represented — this is what "view old versions" reads from.
+    await RateCardRepository.recordHistory({
+      rateCardId: id,
+      version: existing.version,
+      changeSummary: input.changeSummary,
+      changedBy: actor.email,
+      snapshot: toSnapshot(existing),
+    });
+
+    const updated = await RateCardRepository.update(id, {
+      rcType: input.rcType,
+      mgType: input.mgType,
+      minimumOrders: input.minimumOrders,
+      maximumOrders: input.maximumOrders,
+      mgAmount: input.mgAmount,
+      variablePay: input.variablePay,
+      weeklyIncentive: input.weeklyIncentive ?? null,
+      orderIncentive: input.orderIncentive ?? null,
+      version: existing.version + 1,
+    });
+
+    await AuditLogService.record({
+      userId: actor.userId,
+      module: MODULE,
+      action: "RATE_CARD_UPDATED",
+      oldValue: toSnapshot(existing),
+      newValue: toSnapshot(updated),
+    });
+
+    return updated;
+  },
+
+  async delete(id: string, actor: Actor) {
+    const existing = await RateCardRepository.findById(id);
+    if (!existing || existing.status === "DELETED") {
+      throw new NotFoundError("Rate card");
+    }
+    if (existing.status === "LOCKED") {
+      throw new ConflictError("This rate card's week is locked and cannot be deleted.");
+    }
+
+    await RateCardRepository.recordHistory({
+      rateCardId: id,
+      version: existing.version,
+      changeSummary: "Deleted",
+      changedBy: actor.email,
+      snapshot: toSnapshot(existing),
+    });
+
+    await RateCardRepository.update(id, { status: "DELETED" });
+
+    await AuditLogService.record({
+      userId: actor.userId,
+      module: MODULE,
+      action: "RATE_CARD_DELETED",
+      oldValue: toSnapshot(existing),
+    });
+
+    return { success: true as const };
+  },
+
+  async copyPreviousWeek(sourceWeekInput: string, targetWeekInput: string, actor: Actor) {
+    const sourceWeekStartDate = parseWeekStart(sourceWeekInput);
+    const targetWeekStartDate = parseWeekStart(targetWeekInput);
+
+    if (sourceWeekStartDate.getTime() === targetWeekStartDate.getTime()) {
+      throw new ValidationError("Source and target week must be different.");
+    }
+
+    const sourceRows = await RateCardRepository.listByWeek(sourceWeekStartDate);
+    if (sourceRows.length === 0) {
+      throw new ValidationError("The selected source week has no rate cards to copy.");
+    }
+
+    const targetRows = await RateCardRepository.listByWeek(targetWeekStartDate);
+    if (targetRows.length > 0) {
+      throw new ConflictError(
+        "The target week already has rate cards. Copy into an empty week, or remove existing records first."
+      );
+    }
+
+    const targetWeekEndDate = weekEndFromStart(targetWeekStartDate);
+
+    const created = await prisma.$transaction(
+      sourceRows.map((row) =>
+        prisma.weeklyRateCard.create({
+          data: {
+            weekStartDate: targetWeekStartDate,
+            weekEndDate: targetWeekEndDate,
+            storeId: row.storeId,
+            rcType: row.rcType,
+            mgType: row.mgType,
+            minimumOrders: row.minimumOrders,
+            maximumOrders: row.maximumOrders,
+            mgAmount: row.mgAmount,
+            variablePay: row.variablePay,
+            weeklyIncentive: row.weeklyIncentive,
+            orderIncentive: row.orderIncentive,
+            status: "ACTIVE",
+            version: 1,
+            createdBy: actor.email,
+          },
+        })
+      )
+    );
+
+    await AuditLogService.record({
+      userId: actor.userId,
+      module: MODULE,
+      action: "RATE_CARD_WEEK_COPIED",
+      oldValue: { sourceWeekStartDate },
+      newValue: { targetWeekStartDate, recordsCopied: created.length },
+    });
+
+    return { recordsCopied: created.length, targetWeekStartDate };
+  },
+
+  async lockWeek(weekInput: string, actor: Actor) {
+    const weekStartDate = parseWeekStart(weekInput);
+
+    const rows = await RateCardRepository.listByWeek(weekStartDate);
+    if (rows.length === 0) {
+      throw new ValidationError("No rate cards exist for this week yet.");
+    }
+    if (await RateCardRepository.isWeekLocked(weekStartDate)) {
+      throw new ConflictError("This week is already locked.");
+    }
+
+    const result = await RateCardRepository.setStatusForWeek(weekStartDate, "LOCKED");
+
+    await AuditLogService.record({
+      userId: actor.userId,
+      module: MODULE,
+      action: "RATE_CARD_WEEK_LOCKED",
+      newValue: { weekStartDate, lockedBy: actor.email, recordCount: result.count },
+    });
+
+    return { success: true as const, recordsLocked: result.count };
+  },
+
+  async getVersionHistory(id: string) {
+    const rateCard = await RateCardRepository.findById(id);
+    if (!rateCard) {
+      throw new NotFoundError("Rate card");
+    }
+    return RateCardRepository.getHistory(id);
+  },
+
+  async getAuditLogs(params: {
+    action?: string;
+    userId?: string;
+    from?: Date;
+    to?: Date;
+    page?: number;
+    pageSize?: number;
+  }) {
+    return AuditLogService.search({ ...params, module: MODULE });
+  },
+};

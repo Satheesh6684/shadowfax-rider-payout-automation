@@ -20,7 +20,8 @@
     "recharts": "^2.12.7",
     "lucide-react": "^0.424.0",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.2"
+    "tailwind-merge": "^2.5.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

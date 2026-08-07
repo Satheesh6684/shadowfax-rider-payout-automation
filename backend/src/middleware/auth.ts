@@ -42,5 +42,6 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 }
 
 export function signAuthToken(payload: AuthPayload): string {
-  return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+  const options: jwt.SignOptions = { expiresIn: env.jwtExpiresIn as jwt.SignOptions["expiresIn"] };
+  return jwt.sign(payload, env.jwtSecret, options);
 }

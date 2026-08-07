@@ -75,8 +75,11 @@ model RiderMaster {
 }
 
 // ---------- Module 1: Rate Card Management (SRS §12–13) ----------
-// One row per store, per week. Never updated in place once a week is closed —
-// edits within the *current* week bump `version` and write a history row.
+// One LIVE row per store, per week — this is the current state. Every edit
+// snapshots the pre-edit values into RateCardHistory and bumps `version` in
+// place, rather than multiplying rows; `status` governs whether the row (and
+// therefore its whole week, once every row is locked together) can still be
+// edited. Nothing here is ever hard-deleted — see RateCardStatus.DELETED.
 model WeeklyRateCard {
   id              String   @id @default(uuid())
   weekStartDate   DateTime
@@ -90,8 +93,8 @@ model WeeklyRateCard {
   variablePay     Decimal  @db.Decimal(10, 2)
   weeklyIncentive Decimal? @db.Decimal(10, 2)
   orderIncentive  Decimal? @db.Decimal(10, 2)
+  status          String   @default("ACTIVE") // ACTIVE | LOCKED | DELETED
   version         Int      @default(1)
-  isCurrent       Boolean  @default(true)
   createdBy       String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -100,8 +103,9 @@ model WeeklyRateCard {
   specialIncentives SpecialIncentive[]
   history           RateCardHistory[]
 
-  @@unique([storeId, weekStartDate, version])
+  @@unique([storeId, weekStartDate])
   @@index([weekStartDate, weekEndDate])
+  @@index([status])
   @@map("weekly_rate_cards")
 }
 
