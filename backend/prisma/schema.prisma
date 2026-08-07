@@ -1,0 +1,297 @@
+// Shadowfax Amazon Rider Payout Arrears Management System
+// Prisma schema — Phase 0 foundation
+//
+// Design principles (SRS §15.2):
+// - Normalized tables, foreign keys, indexes
+// - Nothing here is ever overwritten across weeks — every weekly entity carries
+//   a weekStartDate and, where edits happen, a version number + history table
+// - Payout formulas are NOT modeled here — RiderCalculation stores results only
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Authentication (SRS §6) ----------
+// Phase 1 = single admin login. `role` is a plain string now so multi-role
+// RBAC (Admin / Operations Manager / Read Only) can be added later without
+// a schema break — see Phase 8.
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         String     @default("ADMIN")
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+// ---------- Master data ----------
+model City {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  stores Store[]
+
+  @@map("cities")
+}
+
+model Store {
+  id         String   @id @default(uuid())
+  storeCode  String   @unique
+  storeName  String
+  cityId     String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  city               City                 @relation(fields: [cityId], references: [id])
+  rateCards          WeeklyRateCard[]
+  uploadedOrders     UploadedOrder[]
+  uploadedLoginHours UploadedLoginHours[]
+
+  @@index([cityId])
+  @@map("stores")
+}
+
+model RiderMaster {
+  id           String   @id @default(uuid())
+  riderId      String   @unique
+  riderName    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  calculations RiderCalculation[]
+  history      RiderHistory[]
+
+  @@map("rider_master")
+}
+
+// ---------- Module 1: Rate Card Management (SRS §12–13) ----------
+// One row per store, per week. Never updated in place once a week is closed —
+// edits within the *current* week bump `version` and write a history row.
+model WeeklyRateCard {
+  id              String   @id @default(uuid())
+  weekStartDate   DateTime
+  weekEndDate     DateTime
+  storeId         String
+  rcType          String
+  mgType          String
+  minimumOrders   Int
+  maximumOrders   Int
+  mgAmount        Decimal  @db.Decimal(10, 2)
+  variablePay     Decimal  @db.Decimal(10, 2)
+  weeklyIncentive Decimal? @db.Decimal(10, 2)
+  orderIncentive  Decimal? @db.Decimal(10, 2)
+  version         Int      @default(1)
+  isCurrent       Boolean  @default(true)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  store             Store              @relation(fields: [storeId], references: [id])
+  specialIncentives SpecialIncentive[]
+  history           RateCardHistory[]
+
+  @@unique([storeId, weekStartDate, version])
+  @@index([weekStartDate, weekEndDate])
+  @@map("weekly_rate_cards")
+}
+
+// Append-only. Never edited or deleted (SRS §13.12: "Historical versions cannot be edited").
+model RateCardHistory {
+  id            String   @id @default(uuid())
+  rateCardId    String
+  version       Int
+  changeSummary String
+  changedBy     String
+  changedAt     DateTime @default(now())
+  snapshot      Json // full row snapshot at this version, for exact historical replay
+
+  rateCard WeeklyRateCard @relation(fields: [rateCardId], references: [id])
+
+  @@index([rateCardId])
+  @@map("rate_card_history")
+}
+
+model SpecialIncentive {
+  id            String   @id @default(uuid())
+  rateCardId    String
+  weekStartDate DateTime
+  name          String
+  description   String?  @db.Text
+  amount        Decimal  @db.Decimal(10, 2)
+  eligibility   String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rateCard WeeklyRateCard @relation(fields: [rateCardId], references: [id])
+
+  @@index([weekStartDate])
+  @@map("special_incentives")
+}
+
+// ---------- Module 2: Payment Configuration (SRS §14) ----------
+model PaymentConfiguration {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  weekEndDate   DateTime
+  paymentType   String // auto-detected from uploaded Valinor data — never hardcoded
+  isIncluded    Boolean  @default(false)
+  detectedFrom  String? // originating upload file name
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([weekStartDate, paymentType])
+  @@map("payment_configuration")
+}
+
+// ---------- Module 3: Upload Center (SRS §24) ----------
+// One row per uploaded file, regardless of type. Individual data rows land in
+// the three tables below; this is the audit/history trail for the upload itself.
+model UploadBatch {
+  id            String   @id @default(uuid())
+  uploadType    String // ORDERS | LOGIN_HOURS | VALINOR
+  fileName      String
+  weekStartDate DateTime
+  totalRecords  Int
+  status        String // SUCCESS | FAILED | REPLACED
+  uploadedBy    String
+  uploadedAt    DateTime @default(now())
+  replacesId    String? // points at the UploadBatch this one replaced, if any
+
+  @@index([weekStartDate, uploadType])
+  @@map("upload_batches")
+}
+
+model UploadedOrder {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  date          DateTime
+  orderId       String
+  awbNumber     String
+  riderId       String
+  riderName     String?
+  storeId       String
+  storeCode     String
+  city          String
+  status        String
+  uploadBatchId String
+  createdAt     DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@unique([orderId, weekStartDate])
+  @@index([weekStartDate, riderId])
+  @@map("uploaded_orders")
+}
+
+model UploadedLoginHours {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  date          DateTime
+  riderId       String
+  riderName     String?
+  storeId       String?
+  loginHours    Decimal  @db.Decimal(5, 2)
+  uploadBatchId String
+  createdAt     DateTime @default(now())
+
+  store Store? @relation(fields: [storeId], references: [id])
+
+  @@unique([riderId, date])
+  @@index([weekStartDate, riderId])
+  @@map("uploaded_login_hours")
+}
+
+model UploadedPayment {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  date          DateTime
+  riderId       String
+  paymentType   String
+  amount        Decimal  @db.Decimal(10, 2)
+  uploadBatchId String
+  createdAt     DateTime @default(now())
+
+  @@index([weekStartDate, riderId, paymentType])
+  @@map("uploaded_payments")
+}
+
+// ---------- Module 5: Calculation Engine (SRS §30–31) ----------
+// This table stores calculation RESULTS only. No formulas live in the schema
+// or in application code yet — the SRS explicitly defers them (Part 3, "Scope
+// Note"). The Strategy-pattern engine built in Phase 5 writes here.
+model RiderCalculation {
+  id                  String    @id @default(uuid())
+  weekStartDate       DateTime
+  riderId             String
+  storeId             String
+  totalEligibleAmount Decimal?  @db.Decimal(10, 2)
+  actualAmount        Decimal?  @db.Decimal(10, 2)
+  pendingAmount       Decimal?  @db.Decimal(10, 2)
+  status              String    @default("PENDING") // PENDING | CALCULATED | EXCEPTION
+  remarks             String?   @db.Text
+  calculatedAt        DateTime?
+  createdAt           DateTime  @default(now())
+
+  rider RiderMaster @relation(fields: [riderId], references: [riderId])
+
+  @@unique([riderId, weekStartDate])
+  @@index([weekStartDate])
+  @@map("rider_calculations")
+}
+
+model RiderHistory {
+  id            String   @id @default(uuid())
+  riderId       String
+  weekStartDate DateTime
+  eventType     String
+  description   String   @db.Text
+  createdAt     DateTime @default(now())
+
+  rider RiderMaster @relation(fields: [riderId], references: [riderId])
+
+  @@index([riderId, weekStartDate])
+  @@map("rider_history")
+}
+
+// ---------- Module 6: Reports (SRS §32) ----------
+// Every generation creates a new row — reports are never overwritten.
+model GeneratedReport {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  reportType    String // CONDITIONS | ORDERS | LOGIN_HOURS | VALINOR | MG | VARIABLE | FV | EXCEPTIONS | SUMMARY
+  format        String // XLSX | CSV | PDF
+  filePath      String
+  generatedBy   String
+  generatedAt   DateTime @default(now())
+
+  @@index([weekStartDate, reportType])
+  @@map("generated_reports")
+}
+
+// ---------- System-wide audit log (SRS §19) ----------
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  module     String
+  action     String
+  oldValue   Json?
+  newValue   Json?
+  occurredAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([module, occurredAt])
+  @@map("audit_logs")
+}
