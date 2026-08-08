@@ -14,6 +14,14 @@ export const StoreRepository = {
     });
   },
 
+  /** Looks up multiple stores by id at once — used wherever a table stores
+   * a plain storeId string without a formal Prisma relation (e.g.
+   * RiderCalculation) and needs to display store details. */
+  async findByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    return prisma.store.findMany({ where: { id: { in: Array.from(new Set(ids)) } }, include: { city: true } });
+  },
+
   /**
    * Rate Card create/edit works with plain city/store-name/store-code text
    * fields; this is what turns that into the normalized Store row the rest

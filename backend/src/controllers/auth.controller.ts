@@ -6,6 +6,7 @@ import { signAuthToken } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { AppError, UnauthorizedError } from "../utils/AppError";
 import { AuditLogService } from "../services/auditLog.service";
+import { UserRepository } from "../repositories/user.repository";
 
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -17,27 +18,33 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.isActive) {
+    await UserRepository.recordLogin({ email, success: false, reason: !user ? "Unknown email" : "Inactive account" });
     throw new UnauthorizedError("Incorrect email or password.");
   }
 
   const passwordMatches = await bcrypt.compare(password, user.passwordHash);
   if (!passwordMatches) {
+    await UserRepository.recordLogin({ userId: user.id, email, success: false, reason: "Incorrect password" });
     throw new UnauthorizedError("Incorrect email or password.");
   }
 
   const token = signAuthToken({ userId: user.id, email: user.email, role: user.role });
 
-  await AuditLogService.record({
-    userId: user.id,
-    module: "AUTH",
-    action: "LOGIN",
-  });
+  await Promise.all([
+    UserRepository.recordLogin({ userId: user.id, email, success: true }),
+    UserRepository.update(user.id, { lastLoginAt: new Date() }),
+    AuditLogService.record({
+      userId: user.id,
+      module: "AUTH",
+      action: "LOGIN",
+    }),
+  ]);
 
   res.json({
     success: true,
     data: {
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, mustChangePassword: user.mustChangePassword },
     },
   });
 });

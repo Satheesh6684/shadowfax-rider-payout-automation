@@ -21,17 +21,37 @@ datasource db {
 // RBAC (Admin / Operations Manager / Read Only) can be added later without
 // a schema break — see Phase 8.
 model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
-  passwordHash String
-  name         String
-  role         String     @default("ADMIN")
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  auditLogs    AuditLog[]
+  id                  String     @id @default(uuid())
+  email               String     @unique
+  passwordHash        String
+  name                String
+  role                String     @default("ADMIN") // ADMIN | MANAGER | OPERATIONS | VIEWER
+  isActive            Boolean    @default(true)
+  mustChangePassword  Boolean    @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  auditLogs           AuditLog[]
+  loginHistory        LoginHistory[]
 
   @@map("users")
+}
+
+model LoginHistory {
+  id         String   @id @default(uuid())
+  userId     String?
+  email      String
+  success    Boolean
+  reason     String? // populated on failure, e.g. "Incorrect password"
+  ipAddress  String?
+  userAgent  String?
+  occurredAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([email])
+  @@map("login_history")
 }
 
 // ---------- Master data ----------
@@ -98,6 +118,49 @@ model WeeklyRateCard {
   createdBy       String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // ---- Calculation Engine business-rule fields (additive; every field
+  // above this line is untouched from the original Rate Card module) ----
+  //
+  // Minimum Login Hours gates MG eligibility. Deliberately nullable with NO
+  // hardcoded default anywhere in application code (not even the commonly-
+  // cited 8.5h) — a rate card that hasn't configured this makes MG report a
+  // clear exception instead of silently assuming a number.
+  minimumLoginHours Decimal? @db.Decimal(4, 2)
+
+  // MG and Variable slabs, exactly as named in the business rules (O1-O7 /
+  // MG1-MG7 / Var1-Var7). A store may configure as few as one slab (o1/mg1
+  // or o1/var1 only) or all seven — the calculation engine determines which
+  // are populated at read time rather than assuming any fixed count.
+  o1  Int?
+  o2  Int?
+  o3  Int?
+  o4  Int?
+  o5  Int?
+  o6  Int?
+  o7  Int?
+  mg1 Decimal? @db.Decimal(10, 2)
+  mg2 Decimal? @db.Decimal(10, 2)
+  mg3 Decimal? @db.Decimal(10, 2)
+  mg4 Decimal? @db.Decimal(10, 2)
+  mg5 Decimal? @db.Decimal(10, 2)
+  mg6 Decimal? @db.Decimal(10, 2)
+  mg7 Decimal? @db.Decimal(10, 2)
+  var1 Decimal? @db.Decimal(10, 2)
+  var2 Decimal? @db.Decimal(10, 2)
+  var3 Decimal? @db.Decimal(10, 2)
+  var4 Decimal? @db.Decimal(10, 2)
+  var5 Decimal? @db.Decimal(10, 2)
+  var6 Decimal? @db.Decimal(10, 2)
+  var7 Decimal? @db.Decimal(10, 2)
+
+  // Generic weekly-pay-type config for the F+V family (F+V, F+V1, F+V2,
+  // F+V3, and any future variant) — keyed by strategy name so a new
+  // payment type is addable by configuring a new key here plus one new
+  // strategy class, with NO schema migration, per the business rules'
+  // explicit extensibility requirement (Architecture Requirements §8).
+  // Shape: { "FV": { "variableRate": 50, "bonusSlabs": [{ "minOrders": 90, "amount": 4800 }] }, "FV1": {...} }
+  weeklyPayConfig Json?
 
   store             Store              @relation(fields: [storeId], references: [id])
   specialIncentives SpecialIncentive[]
@@ -205,17 +268,19 @@ model PaymentTypeHistory {
 
 // ---------- Module 3: Upload Center (SRS §24) ----------
 // One row per uploaded file, regardless of type. Individual data rows land in
-// the three tables below; this is the audit/history trail for the upload itself.
+// the four tables below; this is the audit/history trail for the upload itself.
 model UploadBatch {
-  id            String   @id @default(uuid())
-  uploadType    String // ORDERS | LOGIN_HOURS | VALINOR
-  fileName      String
-  weekStartDate DateTime
-  totalRecords  Int
-  status        String // SUCCESS | FAILED | REPLACED
-  uploadedBy    String
-  uploadedAt    DateTime @default(now())
-  replacesId    String? // points at the UploadBatch this one replaced, if any
+  id               String    @id @default(uuid())
+  uploadType       String // ORDERS | LOGIN_HOURS | RATE_CARD | VALINOR
+  fileName         String
+  weekStartDate    DateTime
+  totalRecords     Int
+  status           String // PROCESSING | SUCCESS | FAILED | REPLACED | REMOVED
+  validationStatus String    @default("PENDING") // PENDING | PASSED | WARNING | FAILED — set by the Validation Engine, not this module
+  errorMessage     String?   @db.Text
+  uploadedBy       String
+  uploadedAt       DateTime  @default(now())
+  replacesId       String? // points at the UploadBatch this one replaced, if any
 
   @@index([weekStartDate, uploadType])
   @@map("upload_batches")
@@ -226,20 +291,21 @@ model UploadedOrder {
   weekStartDate DateTime
   date          DateTime
   orderId       String
-  awbNumber     String
+  awbNumber     String?
   riderId       String
   riderName     String?
-  storeId       String
+  storeId       String?
   storeCode     String
-  city          String
+  city          String?
   status        String
   uploadBatchId String
   createdAt     DateTime @default(now())
 
-  store Store @relation(fields: [storeId], references: [id])
+  store Store? @relation(fields: [storeId], references: [id])
 
   @@unique([orderId, weekStartDate])
   @@index([weekStartDate, riderId])
+  @@index([uploadBatchId])
   @@map("uploaded_orders")
 }
 
@@ -250,6 +316,7 @@ model UploadedLoginHours {
   riderId       String
   riderName     String?
   storeId       String?
+  storeCode     String?
   loginHours    Decimal  @db.Decimal(5, 2)
   uploadBatchId String
   createdAt     DateTime @default(now())
@@ -258,6 +325,7 @@ model UploadedLoginHours {
 
   @@unique([riderId, date])
   @@index([weekStartDate, riderId])
+  @@index([uploadBatchId])
   @@map("uploaded_login_hours")
 }
 
@@ -268,22 +336,91 @@ model UploadedPayment {
   riderId       String
   paymentType   String
   amount        Decimal  @db.Decimal(10, 2)
+  considered    String? // raw value from the "Considered" column — interpreted by the Validation Engine, not here
   uploadBatchId String
   createdAt     DateTime @default(now())
 
   @@index([weekStartDate, riderId, paymentType])
+  @@index([uploadBatchId])
   @@map("uploaded_payments")
 }
 
+// Staging table for bulk Rate Card upload — deliberately separate from the
+// live WeeklyRateCard table. Nothing here ever touches WeeklyRateCard
+// directly; that import step belongs to the Validation Engine / a later
+// "commit" action, once rows have been reviewed. This keeps the Rate Card
+// module's own manual-CRUD path completely untouched.
+model UploadedRateCard {
+  id                String   @id @default(uuid())
+  weekStartDate     DateTime
+  storeCode         String
+  storeName         String
+  city              String
+  rcType            String
+  mgType            String
+  minimumOrders     Int
+  maximumOrders     Int
+  mgAmount          Decimal  @db.Decimal(10, 2)
+  variablePay       Decimal  @db.Decimal(10, 2)
+  weeklyIncentive   Decimal? @db.Decimal(10, 2)
+  orderIncentive    Decimal? @db.Decimal(10, 2)
+  uploadBatchId     String
+  createdAt         DateTime @default(now())
+
+  @@index([weekStartDate])
+  @@index([uploadBatchId])
+  @@map("uploaded_rate_cards")
+}
+
+// ---------- Module 4: Validation Engine ----------
+// One run per "Run Validation" action for a week. Each run snapshots the
+// staged upload data at that moment and produces a full list of issues —
+// re-running after fixing an upload creates a NEW run rather than editing
+// the old one, so there's a real history of validation attempts.
+model ValidationRun {
+  id            String   @id @default(uuid())
+  weekStartDate DateTime
+  status        String // PASSED | WARNING | FAILED
+  totalErrors   Int
+  totalWarnings Int
+  runBy         String
+  runAt         DateTime @default(now())
+
+  issues ValidationIssue[]
+
+  @@index([weekStartDate])
+  @@map("validation_runs")
+}
+
+model ValidationIssue {
+  id              String   @id @default(uuid())
+  validationRunId String
+  weekStartDate   DateTime
+  category        String // ORDERS | LOGIN_HOURS | RATE_CARD | VALINOR — always one of the 4 upload types, even for cross-file checks (attributed to whichever side the check is "about")
+  checkName       String // e.g. DUPLICATE_AWB, MISSING_STORE, NEGATIVE_MG
+  severity        String // ERROR | WARNING
+  message         String   @db.Text
+  context         Json? // identifying info for the offending row(s) — orderId, riderId, storeCode, etc.
+  createdAt       DateTime @default(now())
+
+  run ValidationRun @relation(fields: [validationRunId], references: [id])
+
+  @@index([validationRunId])
+  @@index([weekStartDate, category])
+  @@map("validation_issues")
+}
+
 // ---------- Module 5: Calculation Engine (SRS §30–31) ----------
-// This table stores calculation RESULTS only. No formulas live in the schema
-// or in application code yet — the SRS explicitly defers them (Part 3, "Scope
-// Note"). The Strategy-pattern engine built in Phase 5 writes here.
+// This table stores calculation RESULTS only. No payout formulas live in the
+// schema or in application code — the governing SRS explicitly defers them
+// ("Do Not Invent Payout Formulas"). The Strategy-pattern engine writes
+// here; every strategy currently reports EXCEPTION until real business
+// rules are supplied, rather than fabricating a number.
 model RiderCalculation {
   id                  String    @id @default(uuid())
   weekStartDate       DateTime
   riderId             String
-  storeId             String
+  storeId             String?
   totalEligibleAmount Decimal?  @db.Decimal(10, 2)
   actualAmount        Decimal?  @db.Decimal(10, 2)
   pendingAmount       Decimal?  @db.Decimal(10, 2)
@@ -297,6 +434,41 @@ model RiderCalculation {
   @@unique([riderId, weekStartDate])
   @@index([weekStartDate])
   @@map("rider_calculations")
+}
+
+// One row per "Run Calculation" action for a week — mirrors ValidationRun's
+// pattern. Re-running never edits an old run; it creates a new one.
+model CalculationRun {
+  id              String   @id @default(uuid())
+  weekStartDate   DateTime
+  status          String // COMPLETED | COMPLETED_WITH_EXCEPTIONS | FAILED
+  totalRiders     Int
+  totalCalculated Int
+  totalExceptions Int
+  runBy           String
+  runAt           DateTime @default(now())
+
+  @@index([weekStartDate])
+  @@map("calculation_runs")
+}
+
+// Per-rider, per-strategy trace for a calculation run — this is what "no
+// massive if-else, independently extendable" strategies each report back,
+// and what a future Exception Management screen will read from.
+model CalculationLog {
+  id               String   @id @default(uuid())
+  calculationRunId String
+  weekStartDate    DateTime
+  riderId          String
+  strategyName     String // MG | VARIABLE | FV | FV1 | FV2 | SPECIAL_INCENTIVE | VALINOR_MERGE | ROUND_OFF
+  status           String // CALCULATED | SKIPPED | EXCEPTION
+  amount           Decimal? @db.Decimal(10, 2)
+  message          String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([calculationRunId])
+  @@index([weekStartDate, riderId])
+  @@map("calculation_logs")
 }
 
 model RiderHistory {
@@ -316,16 +488,101 @@ model RiderHistory {
 // ---------- Module 6: Reports (SRS §32) ----------
 // Every generation creates a new row — reports are never overwritten.
 model GeneratedReport {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   weekStartDate DateTime
-  reportType    String // CONDITIONS | ORDERS | LOGIN_HOURS | VALINOR | MG | VARIABLE | FV | EXCEPTIONS | SUMMARY
+  reportType    String // WEEKLY_PAYOUT_REPORT (multi-sheet workbook) — extensible for future single-sheet variants
   format        String // XLSX | CSV | PDF
   filePath      String
+  fileName      String    @default("report.xlsx")
+  fileSizeBytes Int       @default(0)
+  downloadCount Int       @default(0)
+  lastDownloadedAt DateTime?
   generatedBy   String
-  generatedAt   DateTime @default(now())
+  generatedAt   DateTime  @default(now())
 
   @@index([weekStartDate, reportType])
   @@map("generated_reports")
+}
+
+// ---------- Module 9: Exception Management ----------
+// A live, resolvable ledger — distinct from ValidationIssue/CalculationLog,
+// which stay exactly as they were (append-only, one row per run, never
+// edited). Exceptions are upserted here whenever a Validation run produces
+// an ERROR-severity issue or a Calculation run produces a per-rider
+// EXCEPTION result, deduplicated so re-running the same broken week doesn't
+// spawn duplicate open tickets — it just confirms the same one is still open.
+model Exception {
+  id              String    @id @default(uuid())
+  weekStartDate   DateTime
+  source          String // VALIDATION | CALCULATION
+  category        String // ORDERS | LOGIN_HOURS | RATE_CARD | VALINOR | CALCULATION
+  checkName       String // e.g. UNKNOWN_STORE_CODE, or a strategy name like MG
+  severity        String // ERROR | WARNING
+  riderId         String?
+  // Non-nullable dedupe key (riderId, or "GLOBAL" when not rider-specific) —
+  // MySQL unique indexes treat every NULL as distinct, which would silently
+  // defeat deduplication for non-rider exceptions if riderId were used directly.
+  dedupeKey       String
+  message         String    @db.Text
+  context         Json?
+  status          String    @default("OPEN") // OPEN | RESOLVED | IGNORED
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  resolutionNotes String?   @db.Text
+  sourceRunId     String // validationRunId or calculationRunId, for traceability
+  occurrenceCount Int       @default(1) // bumped each time the same exception recurs on a re-run
+  firstSeenAt     DateTime  @default(now())
+  lastSeenAt      DateTime  @default(now())
+
+  @@unique([weekStartDate, source, category, checkName, dedupeKey])
+  @@index([weekStartDate, status])
+  @@index([riderId])
+  @@map("exceptions")
+}
+
+// ---------- Module: Settings ----------
+// Singleton row (fixed id) — one settings record for the whole application.
+model AppSettings {
+  id                                   String   @id @default("singleton")
+  organizationName                     String   @default("Shadowfax")
+  defaultCurrency                      String   @default("INR")
+  defaultRoundingPrecision             Int      @default(2)
+  defaultRoundingMode                  String   @default("HALF_UP") // HALF_UP | HALF_DOWN | CEILING | FLOOR
+  maxUploadSizeMb                      Int      @default(20)
+  allowedUploadFormats                 String   @default("csv,xlsx")
+  blockCalculationOnValidationFailure  Boolean  @default(true)
+  defaultReportFormat                  String   @default("XLSX")
+  notifyOnUploadSuccess                Boolean  @default(true)
+  notifyOnUploadFailure                Boolean  @default(true)
+  notifyOnValidationComplete           Boolean  @default(true)
+  notifyOnCalculationComplete          Boolean  @default(true)
+  notifyOnReportGenerated              Boolean  @default(true)
+  updatedBy                            String?
+  updatedAt                            DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+// ---------- Module: Notifications ----------
+// Persisted notification center (the bell icon's contents) — distinct from
+// Toast, which stays exactly as-is for real-time in-session feedback. This
+// is what lets a user see "what happened" after the fact, not just at the
+// moment it occurred.
+model Notification {
+  id        String    @id @default(uuid())
+  type      String // SUCCESS | ERROR | INFO
+  category  String // UPLOAD | VALIDATION | CALCULATION | REPORT
+  title     String
+  message   String    @db.Text
+  isRead    Boolean   @default(false)
+  userId    String? // null = broadcast to all users
+  context   Json?
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }
 
 // ---------- System-wide audit log (SRS §19) ----------

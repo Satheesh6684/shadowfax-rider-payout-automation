@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { History } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { usePermission } from "@/lib/hooks/usePermission";
 import { paymentTypesApi } from "@/lib/api/paymentTypes";
 import { PaymentType, PaymentTypeHistoryEntry } from "@/lib/types";
 import { ApiError } from "@/lib/api-client";
@@ -22,6 +23,15 @@ export default function PaymentConfigurationPage() {
   const { token } = useAuth();
   const router = useRouter();
   const { showSuccess, showError } = useToast();
+  const canWrite = usePermission("payment_config:write");
+
+  function requireWrite(): boolean {
+    if (!canWrite) {
+      showError("Your role doesn't have permission to make changes here.");
+      return false;
+    }
+    return true;
+  }
 
   const [filters, setFilters] = useState<PaymentTypeFilterValues>({ category: "", status: "", search: "" });
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -81,11 +91,13 @@ export default function PaymentConfigurationPage() {
   }, [loadList]);
 
   function openCreate() {
+    if (!requireWrite()) return;
     setFormTarget(null);
     setIsFormOpen(true);
   }
 
   function openEdit(paymentType: PaymentType) {
+    if (!requireWrite()) return;
     setFormTarget(paymentType);
     setIsFormOpen(true);
   }
@@ -111,6 +123,7 @@ export default function PaymentConfigurationPage() {
   }
 
   async function handleToggleStatus(paymentType: PaymentType) {
+    if (!requireWrite()) return;
     if (!token) return;
     const nextStatus = paymentType.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
@@ -170,7 +183,7 @@ export default function PaymentConfigurationPage() {
         data={items}
         isLoading={isLoading}
         onEdit={openEdit}
-        onDelete={setDeleteTarget}
+        onDelete={(pt) => requireWrite() && setDeleteTarget(pt)}
         onViewHistory={openHistory}
         onToggleStatus={handleToggleStatus}
       />

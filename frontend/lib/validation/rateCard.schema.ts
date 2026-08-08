@@ -14,6 +14,7 @@ const baseRateCardFields = {
   variablePay: numberField("Variable Amount"),
   weeklyIncentive: numberField("Weekly Incentive").optional(),
   orderIncentive: numberField("Order Incentive").optional(),
+  minimumLoginHours: numberField("Minimum Login Hours").optional(),
 };
 
 const ordersRefine = <T extends { minimumOrders: number; maximumOrders: number }>(data: T) =>

@@ -1,15 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CreateRateCardFormValues, createRateCardFormSchema } from "@/lib/validation/rateCard.schema";
 import { useMasterData } from "@/lib/hooks/useMasterData";
 import { currentWeekStartIso } from "@/lib/format";
+import { slabsToFields } from "@/lib/calculation/slabs";
+import { SlabRow } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { FieldWrapper, NumberField, TextField } from "./FormFields";
+import { SlabEditor } from "./SlabEditor";
 
 interface RateCardCreateFormProps {
-  onSubmit: (values: CreateRateCardFormValues) => Promise<void>;
+  onSubmit: (values: CreateRateCardFormValues & Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
   defaultWeekStartDate?: string;
@@ -22,6 +26,10 @@ export function RateCardCreateForm({
   defaultWeekStartDate,
 }: RateCardCreateFormProps) {
   const { cities, stores } = useMasterData();
+  const [slabs, setSlabs] = useState<SlabRow[]>([]);
+  const [weeklyPayConfigJson, setWeeklyPayConfigJson] = useState("");
+  const [weeklyConfigError, setWeeklyConfigError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -44,8 +52,22 @@ export function RateCardCreateForm({
     }
   }
 
+  async function submit(values: CreateRateCardFormValues) {
+    setWeeklyConfigError(null);
+    let weeklyPayConfig: unknown = undefined;
+    if (weeklyPayConfigJson.trim()) {
+      try {
+        weeklyPayConfig = JSON.parse(weeklyPayConfigJson);
+      } catch {
+        setWeeklyConfigError("Invalid JSON — check the syntax.");
+        return;
+      }
+    }
+    await onSubmit({ ...values, ...slabsToFields(slabs), weeklyPayConfig });
+  }
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(submit)} className="space-y-5">
       <FieldWrapper label="Week (must start on a Monday)" error={errors.weekStartDate}>
         <input
           type="date"
@@ -107,6 +129,34 @@ export function RateCardCreateForm({
           step="0.01"
         />
       </div>
+
+      <div className="space-y-4 rounded-lg border border-border bg-background p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          Calculation Engine — MG &amp; Variable Slabs
+        </p>
+
+        <NumberField
+          label="Minimum Login Hours (required for MG eligibility)"
+          registration={register("minimumLoginHours")}
+          error={errors.minimumLoginHours}
+          step="0.1"
+        />
+
+        <SlabEditor slabs={slabs} onChange={setSlabs} />
+      </div>
+
+      <FieldWrapper
+        label="Weekly F+V Configuration (advanced, JSON — optional)"
+        hint='e.g. {"FV": {"variableRate": 50, "bonusSlabs": [{"minOrders": 90, "amount": 4800}]}}'
+      >
+        <textarea
+          value={weeklyPayConfigJson}
+          onChange={(e) => setWeeklyPayConfigJson(e.target.value)}
+          rows={3}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+        />
+        {weeklyConfigError && <p className="mt-1 text-xs text-danger">{weeklyConfigError}</p>}
+      </FieldWrapper>
 
       <datalist id="city-options">
         {cities.map((city) => (

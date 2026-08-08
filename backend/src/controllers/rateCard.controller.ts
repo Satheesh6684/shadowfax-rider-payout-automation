@@ -85,6 +85,12 @@ export const getVersionHistory = asyncHandler(async (req: Request, res: Response
   res.json({ success: true, data: history });
 });
 
+export const getRecentHistory = asyncHandler(async (req: Request, res: Response) => {
+  const q = req.query as Record<string, string | undefined>;
+  const history = await RateCardService.getRecentHistory(q.weekStartDate as string, q.limit ? Number(q.limit) : undefined);
+  res.json({ success: true, data: history });
+});
+
 export const getRateCardAuditLogs = asyncHandler(async (req: Request, res: Response) => {
   const q = req.query as Record<string, string | undefined>;
   const result = await RateCardService.getAuditLogs({

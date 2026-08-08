@@ -1,89 +1,92 @@
 # Shadowfax Amazon Rider Payout Arrears Management System
 
-Phase 0 (foundation) + Phase 1 (Rate Card Management) + Payment
-Configuration, built from the SRS v1.1 plus follow-up implementation briefs.
+All 12 modules present with real backend + frontend + database integration.
+This README reflects the current state only.
 
-## What's actually here
+## This phase: completing RBAC UI coverage + workflow chain + quality review
 
-**Backend** (`/backend` — Node.js + Express + TypeScript + Prisma/MySQL)
-- Phase 0 foundation: Prisma schema, centralized error handling/validation,
-  JWT auth (single admin), `AuditLogService`, repository pattern
-- **Rate Card Management** — full CRUD, versioned edits, Copy Previous Week,
-  Lock Week, version history, module-scoped audit logs
-- **Payment Configuration** — a `PaymentType` master registry (name,
-  category, calculation method, priority, enable/disable), same
-  versioned-edit + soft-delete + audit pattern as Rate Card. Endpoints:
-  `GET/POST /payment-types`, `GET/PUT/DELETE /payment-types/:id`,
-  `PATCH /payment-types/:id/status`, `GET /payment-types/:id/history`,
-  `GET /payment-types/audit-logs`, `GET /payment-types/active` (used by
-  other modules that need the live catalogue, not a paginated page of it).
-  A shared `Actor` type (`src/types/actor.ts`) now carries user attribution
-  across every module's service layer, instead of living inside
-  `rateCard.service.ts`.
-- The *original* SRS's `PaymentConfiguration` model (payment categories
-  auto-detected from a weekly Valinor upload) is still just a schema stub —
-  no repository/service/controller yet. Expect it to get wired up once
-  Upload Center's Valinor upload exists.
+**RBAC frontend coverage extended to every remaining write action:**
+Exceptions (resolve/ignore/reopen/reprocess), Reports (generate), Settings
+(save — wrapped the whole form in a `<fieldset disabled>` so VIEWER/
+OPERATIONS see a genuinely read-only form, not just a blocked button).
+Combined with last phase's Rate Card/Payment Configuration/Upload Center
+coverage, every module with a write action now has both frontend gating
+*and* backend enforcement (the backend was always the real boundary; this
+phase closes the UX gap where a disallowed action would previously show a
+raw API error instead of being disabled/toast-guarded upfront).
 
-**Frontend** (`/frontend` — Next.js 14 + TypeScript + Tailwind)
-- Auth plumbing, app shell, and Rate Card Management pages as before
-- **Payment Configuration**: `/payment-configuration` (list, search, filter
-  by category/status, pagination, create/edit/history modals, enable-disable
-  toggle, delete) and `/payment-configuration/audit`
-- `components/shared/AuditHistoryTable.tsx` — the audit table used to be
-  Rate-Card-specific; it's now generalized (action labels/tones passed as
-  props) so Payment Configuration reuses it instead of duplicating it. Both
-  modules' audit pages were updated to pass their own label/tone maps.
-- `apiClient` gained a `.patch()` method for the status-toggle endpoint
+**Workflow chain completed** (item 11's explicit ask — verify Upload →
+Validate → Calculate → Exceptions → Reports → Download is fully connected):
+found two real gaps by actually checking, not assuming. Calculation
+Engine's Exceptions count had no way to navigate to Exceptions; Exceptions
+had no forward link to Reports. Both fixed, and the selected week now
+carries through the whole chain via query params (Calculation Engine →
+Exceptions → Reports all read `?week=`).
 
-Both `npm install` and a full `next build` / `tsc --noEmit` pass were run
-after adding Payment Configuration — same verification standard as Rate
-Card. One real bug was caught and fixed mid-build: an earlier edit to
-`lib/types.ts` had accidentally dropped the `RateCardFormValues` interface's
-opening line while inserting the new Payment Type types above it — caught by
-the build failing, not by inspection, which is exactly why this project
-verifies with a real compiler pass rather than just writing plausible-looking
-code. The only remaining known gap is `prisma generate`, which needs to
-download its engine binary from `binaries.prisma.sh` — unreachable from the
-sandbox this was built in, but should work normally for you.
+**Quality review — real findings:**
+- Scanned every component/lib file for actual imports (not just assumed
+  clean): frontend has zero orphaned files. Backend: found and removed one
+  genuinely dead file, `base.repository.ts` — a Phase 0 interface no
+  repository ever ended up implementing.
+- Removed stale placeholder comments in `routes/index.ts` referencing
+  modules (`review`, plus duplicate mentions of `upload`/`calculate`/
+  `reports`/`riders`) that are now actually mounted above them, or were
+  merged into another module rather than built separately.
+- Caught and corrected my own process error mid-check: a "TypeScript
+  deprecation warning" turned out to be a stray global TS 6.0.3 answering
+  `npx tsc` because I'd forgotten to reinstall `node_modules` after a
+  cleanup — not a real project issue. Reinstalled properly and confirmed
+  the project's actually-pinned TypeScript 5.9.3 is clean. Worth recording
+  so it's clear this was verified, not hand-waved.
+- ESLint: no config file existed despite the dependency being present
+  since Phase 0 (found last phase); still clean now with 0 errors/warnings
+  after all of this phase's changes.
+- Cross-referenced every frontend API call's path against actual backend
+  route registrations — zero dead/broken API calls found.
 
-## Scope decisions worth knowing about
+Full `npm install` + `next build` + `tsc --noEmit` + `eslint` passed clean
+after every change this phase, same standard as every prior phase.
 
-- **Payment Type "Delete" is soft**, not a hard row delete — status flips to
-  `DELETED`, same reasoning as Rate Card: avoids orphaning
-  `PaymentTypeHistory` rows and matches the SRS's "never lose historical
-  records" principle.
-- **Calculation Method values** (`FIXED_AMOUNT` / `PERCENTAGE` /
-  `FORMULA_BASED`) aren't specified anywhere in either brief — this is an
-  assumption, flagged rather than silently invented. Easy to extend since
-  it's a single enum in one validators file.
-- **Create/Edit uses a shared modal**, not separate pages like Rate Card —
-  Payment Type has no immutable identity field (no store+week equivalent),
-  so there was no reason to force a page navigation for what's simple
-  master-data CRUD.
+## What's still genuinely incomplete
+
+- **Special Incentives** — still exceptions out. No formula or eligibility
+  structure has ever been given across any turn; finishing it means
+  inventing one, which every phase has consistently declined to do.
+- RBAC read-endpoint gating (writes are fully protected; reads remain open
+  to any authenticated user by design/scope choice, not oversight).
+- Forced password-change enforcement (the field and tracking exist; no UI
+  flow forces the change yet).
+- Automated tests — zero exist anywhere in the repo.
+- Live-database verification — this schema has never once run against a
+  real MySQL instance; `prisma generate` has been blocked by this sandbox's
+  lack of network access to `binaries.prisma.sh` for the entire project.
+
+## Manual test checklist before considering this deployment-ready
+
+- [ ] `prisma generate` + `migrate dev` actually succeed against a real MySQL instance
+- [ ] Seed script creates the admin user; login works end-to-end
+- [ ] Create a MANAGER/OPERATIONS/VIEWER user via Settings → User Management; confirm each role's UI restrictions match what's documented above, and that attempting a disallowed action via direct API call (not just UI) is rejected server-side
+- [ ] Full workflow: upload real Orders/Login/Rate Card/Valinor files → Review & Validate passes → Run Calculation → confirm results → check Exceptions for any flagged rows → Generate Report → download and open the Excel file, confirm all 11 sheets are populated correctly
+- [ ] Configure a rate card with real MG/Variable slabs and a Minimum Login Hours value; confirm calculated amounts match hand-calculated expectations
+- [ ] Configure a rate card with NO slabs (only the flat fields); confirm MG/Variable still calculate via the flat fallback rather than exceptioning
+- [ ] Resolve, ignore, and reopen an exception; confirm audit log entries appear
+- [ ] Change your own password; reset another user's password as ADMIN; confirm login history reflects both
 
 ## Running it locally
 
 ```bash
 # Backend
 cd backend
-cp .env.example .env   # fill in a real MySQL DATABASE_URL and JWT_SECRET
+cp .env.example .env
 npm install
 npx prisma generate
 npx prisma migrate dev --name init
-npm run prisma:seed     # creates admin@shadowfax.local / ChangeMe123!
-npm run dev              # http://localhost:5000
+npm run prisma:seed
+npm run dev
 
 # Frontend
 cd frontend
 cp .env.local.example .env.local
 npm install
-npm run dev              # http://localhost:3000
+npm run dev
 ```
-
-## What's next
-
-Upload Center, then Validation Engine — see
-`Shadowfax_Implementation_Plan.md` for the full phase breakdown.
-
-

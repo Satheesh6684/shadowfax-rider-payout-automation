@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import {
   copyPreviousWeekSchema,
@@ -15,6 +15,7 @@ import {
   getRateCardAuditLogs,
   getRateCardById,
   getRateCardsByWeek,
+  getRecentHistory,
   getVersionHistory,
   listCities,
   listRateCards,
@@ -32,15 +33,16 @@ rateCardRouter.get("/meta/cities", listCities);
 rateCardRouter.get("/meta/stores", listStores);
 
 rateCardRouter.get("/audit-logs", getRateCardAuditLogs);
+rateCardRouter.get("/history/recent", getRecentHistory);
 rateCardRouter.get("/week/:weekStartDate", getRateCardsByWeek);
 
 rateCardRouter.get("/", validate(listRateCardsQuerySchema, "query"), listRateCards);
-rateCardRouter.post("/", validate(createRateCardSchema), createRateCard);
+rateCardRouter.post("/", requirePermission("rate_card:write"), validate(createRateCardSchema), createRateCard);
 
-rateCardRouter.post("/copy-week", validate(copyPreviousWeekSchema), copyPreviousWeek);
-rateCardRouter.post("/lock-week", validate(lockWeekSchema), lockWeek);
+rateCardRouter.post("/copy-week", requirePermission("rate_card:write"), validate(copyPreviousWeekSchema), copyPreviousWeek);
+rateCardRouter.post("/lock-week", requirePermission("rate_card:write"), validate(lockWeekSchema), lockWeek);
 
 rateCardRouter.get("/:id/history", getVersionHistory);
 rateCardRouter.get("/:id", getRateCardById);
-rateCardRouter.put("/:id", validate(updateRateCardSchema), updateRateCard);
-rateCardRouter.delete("/:id", deleteRateCard);
+rateCardRouter.put("/:id", requirePermission("rate_card:write"), validate(updateRateCardSchema), updateRateCard);
+rateCardRouter.delete("/:id", requirePermission("rate_card:write"), deleteRateCard);

@@ -3,6 +3,53 @@ import { z } from "zod";
 const decimalField = (label: string) =>
   z.coerce.number({ invalid_type_error: `${label} must be a number.` }).min(0, `${label} must be 0 or greater.`);
 
+const optionalNonNegativeInt = z.coerce.number().int().min(0).optional().nullable();
+const optionalNonNegativeDecimal = z.coerce.number().min(0).optional().nullable();
+
+const bonusSlabSchema = z.object({
+  minOrders: z.coerce.number().int().min(0),
+  amount: z.coerce.number().min(0),
+});
+
+const weeklyPayTypeConfigSchema = z.object({
+  variableRate: z.coerce.number().min(0).optional(),
+  bonusSlabs: z.array(bonusSlabSchema).optional(),
+});
+
+// Calculation Engine business-rule fields (additive) — Minimum Login Hours,
+// the O1-O7/MG1-MG7/Var1-Var7 slabs exactly as named in the business rules,
+// and the generic weekly-pay-type config for the extensible F+V family.
+// Every field here is optional: a rate card that hasn't configured these
+// yet keeps working exactly as before, it just can't be used by MG/
+// Variable/F+V until they're filled in (the calculation engine reports a
+// clear exception in that case, not a crash or a guessed number).
+const calculationFieldsSchema = z.object({
+  minimumLoginHours: optionalNonNegativeDecimal,
+  o1: optionalNonNegativeInt,
+  o2: optionalNonNegativeInt,
+  o3: optionalNonNegativeInt,
+  o4: optionalNonNegativeInt,
+  o5: optionalNonNegativeInt,
+  o6: optionalNonNegativeInt,
+  o7: optionalNonNegativeInt,
+  mg1: optionalNonNegativeDecimal,
+  mg2: optionalNonNegativeDecimal,
+  mg3: optionalNonNegativeDecimal,
+  mg4: optionalNonNegativeDecimal,
+  mg5: optionalNonNegativeDecimal,
+  mg6: optionalNonNegativeDecimal,
+  mg7: optionalNonNegativeDecimal,
+  var1: optionalNonNegativeDecimal,
+  var2: optionalNonNegativeDecimal,
+  var3: optionalNonNegativeDecimal,
+  var4: optionalNonNegativeDecimal,
+  var5: optionalNonNegativeDecimal,
+  var6: optionalNonNegativeDecimal,
+  var7: optionalNonNegativeDecimal,
+  weeklyPayConfig: z.record(weeklyPayTypeConfigSchema).optional().nullable(),
+});
+export type CalculationFieldsInput = z.infer<typeof calculationFieldsSchema>;
+
 // Shared by create and update — the numeric/text business rules from the
 // brief (§VALIDATIONS) live here in one place.
 const rateCardFieldsSchema = z
@@ -25,6 +72,7 @@ const rateCardFieldsSchema = z
     weeklyIncentive: decimalField("Weekly Incentive").optional(),
     orderIncentive: decimalField("Order Incentive").optional(),
   })
+  .and(calculationFieldsSchema)
   .refine((data) => data.maximumOrders >= data.minimumOrders, {
     message: "Maximum Orders must be greater than or equal to Minimum Orders.",
     path: ["maximumOrders"],
@@ -51,6 +99,7 @@ export const updateRateCardSchema = z
     orderIncentive: decimalField("Order Incentive").optional(),
     changeSummary: z.string().trim().min(1, "A short description of what changed is required."),
   })
+  .and(calculationFieldsSchema)
   .refine((data) => data.maximumOrders >= data.minimumOrders, {
     message: "Maximum Orders must be greater than or equal to Minimum Orders.",
     path: ["maximumOrders"],

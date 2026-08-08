@@ -6,6 +6,7 @@ import {
   RateCard,
   RateCardFormValues,
   RateCardHistoryEntry,
+  RecentHistoryEntry,
   Store,
 } from "@/lib/types";
 
@@ -40,11 +41,14 @@ export const rateCardsApi = {
 
   getById: (id: string, token: string) => apiClient.get<RateCard>(`/rate-cards/${id}`, { token }),
 
-  create: (data: RateCardFormValues & { weekStartDate: string }, token: string) =>
+  create: (data: RateCardFormValues & { weekStartDate: string } & Record<string, unknown>, token: string) =>
     apiClient.post<RateCard>("/rate-cards", data, { token }),
 
-  update: (id: string, data: Omit<RateCardFormValues, "cityName" | "storeName" | "storeCode"> & { changeSummary: string }, token: string) =>
-    apiClient.put<RateCard>(`/rate-cards/${id}`, data, { token }),
+  update: (
+    id: string,
+    data: Omit<RateCardFormValues, "cityName" | "storeName" | "storeCode"> & { changeSummary: string } & Record<string, unknown>,
+    token: string
+  ) => apiClient.put<RateCard>(`/rate-cards/${id}`, data, { token }),
 
   delete: (id: string, token: string) =>
     apiClient.delete<{ success: true }>(`/rate-cards/${id}`, { token }),
@@ -61,6 +65,9 @@ export const rateCardsApi = {
 
   getVersionHistory: (id: string, token: string) =>
     apiClient.get<RateCardHistoryEntry[]>(`/rate-cards/${id}/history`, { token }),
+
+  getRecentHistory: (weekStartDate: string, limit: number, token: string) =>
+    apiClient.get<RecentHistoryEntry[]>(`/rate-cards/history/recent${toQueryString({ weekStartDate, limit })}`, { token }),
 
   getAuditLogs: (
     filters: { action?: string; page?: number; pageSize?: number },

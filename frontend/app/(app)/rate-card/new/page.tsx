@@ -16,7 +16,7 @@ export default function NewRateCardPage() {
   const { showSuccess, showError } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(values: CreateRateCardFormValues) {
+  async function handleSubmit(values: CreateRateCardFormValues & Record<string, unknown>) {
     if (!token) return;
     setIsSubmitting(true);
     try {

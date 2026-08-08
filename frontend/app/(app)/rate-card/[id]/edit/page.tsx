@@ -31,7 +31,7 @@ export default function EditRateCardPage() {
       .finally(() => setIsLoading(false));
   }, [id, token]);
 
-  async function handleSubmit(values: EditRateCardFormValues) {
+  async function handleSubmit(values: EditRateCardFormValues & Record<string, unknown>) {
     if (!token) return;
     setIsSubmitting(true);
     try {

@@ -135,4 +135,17 @@ export const RateCardRepository = {
       orderBy: { version: "desc" },
     });
   },
+
+  /** Most recent history entries across EVERY rate card for a week — feeds
+   * the "Recent Version History" activity strip. Per-store history
+   * (getHistory above) stays the source of truth for one store's full
+   * timeline; this is a cross-store recent-activity view. */
+  async getRecentHistoryForWeek(weekStartDate: Date, limit: number) {
+    return prisma.rateCardHistory.findMany({
+      where: { rateCard: { weekStartDate } },
+      include: { rateCard: { include: { store: true } } },
+      orderBy: { changedAt: "desc" },
+      take: limit,
+    });
+  },
 };

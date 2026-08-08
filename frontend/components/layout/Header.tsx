@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { LogOut, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { WeekPill } from "./WeekPill";
+import { NotificationBell } from "./NotificationBell";
 
 // Static placeholder week for Phase 0/1. A real week-selector context lands
 // alongside the rate card table's week picker.
@@ -39,6 +40,8 @@ export function Header() {
       </div>
 
       <WeekPill label={CURRENT_WEEK_LABEL} isCurrent />
+
+      <NotificationBell />
 
       {user && (
         <div className="flex items-center gap-2">

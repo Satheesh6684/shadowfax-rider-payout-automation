@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import {
   createPaymentTypeSchema,
@@ -27,10 +27,10 @@ paymentTypeRouter.get("/active", listActivePaymentTypes);
 paymentTypeRouter.get("/audit-logs", getPaymentTypeAuditLogs);
 
 paymentTypeRouter.get("/", validate(listPaymentTypesQuerySchema, "query"), listPaymentTypes);
-paymentTypeRouter.post("/", validate(createPaymentTypeSchema), createPaymentType);
+paymentTypeRouter.post("/", requirePermission("payment_config:write"), validate(createPaymentTypeSchema), createPaymentType);
 
 paymentTypeRouter.get("/:id/history", getPaymentTypeVersionHistory);
-paymentTypeRouter.patch("/:id/status", validate(updatePaymentTypeStatusSchema), updatePaymentTypeStatus);
+paymentTypeRouter.patch("/:id/status", requirePermission("payment_config:write"), validate(updatePaymentTypeStatusSchema), updatePaymentTypeStatus);
 paymentTypeRouter.get("/:id", getPaymentTypeById);
-paymentTypeRouter.put("/:id", validate(updatePaymentTypeSchema), updatePaymentType);
-paymentTypeRouter.delete("/:id", deletePaymentType);
+paymentTypeRouter.put("/:id", requirePermission("payment_config:write"), validate(updatePaymentTypeSchema), updatePaymentType);
+paymentTypeRouter.delete("/:id", requirePermission("payment_config:write"), deletePaymentType);

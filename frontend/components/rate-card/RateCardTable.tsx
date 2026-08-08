@@ -21,6 +21,8 @@ interface RateCardTableProps {
   onEdit: (rateCard: RateCard) => void;
   onDelete: (rateCard: RateCard) => void;
   onViewHistory: (rateCard: RateCard) => void;
+  onRowClick?: (rateCard: RateCard) => void;
+  canWrite?: boolean;
 }
 
 const columns: ColumnDef<RateCard>[] = [
@@ -99,6 +101,8 @@ export function RateCardTable({
   onEdit,
   onDelete,
   onViewHistory,
+  onRowClick,
+  canWrite = true,
 }: RateCardTableProps) {
   const table = useReactTable({
     data,
@@ -162,13 +166,17 @@ export function RateCardTable({
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="border-b border-border last:border-0 hover:bg-background/60">
+            <tr
+              key={row.id}
+              onClick={() => onRowClick?.(row.original)}
+              className={`border-b border-border last:border-0 hover:bg-background/60 ${onRowClick ? "cursor-pointer" : ""}`}
+            >
               {row.getVisibleCells().map((cell) => (
                 <td key={cell.id} className="px-4 py-3">
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>
               ))}
-              <td className="px-4 py-3">
+              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end gap-1">
                   <button
                     aria-label="View history"
@@ -179,7 +187,7 @@ export function RateCardTable({
                   </button>
                   <button
                     aria-label="Edit"
-                    disabled={row.original.status === "LOCKED"}
+                    disabled={row.original.status === "LOCKED" || !canWrite}
                     onClick={() => onEdit(row.original)}
                     className="rounded-md p-1.5 text-muted hover:bg-background hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
                   >
@@ -187,7 +195,7 @@ export function RateCardTable({
                   </button>
                   <button
                     aria-label="Delete"
-                    disabled={row.original.status === "LOCKED"}
+                    disabled={row.original.status === "LOCKED" || !canWrite}
                     onClick={() => onDelete(row.original)}
                     className="rounded-md p-1.5 text-muted hover:bg-danger-soft hover:text-danger disabled:pointer-events-none disabled:opacity-30"
                   >

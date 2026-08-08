@@ -6,9 +6,26 @@ import { AuditLogService } from "./auditLog.service";
 import { parseWeekStart, weekEndFromStart } from "../utils/week";
 import { ConflictError, NotFoundError, ValidationError } from "../utils/AppError";
 import type { Actor } from "../types/actor";
-import type { CreateRateCardInput, UpdateRateCardInput } from "../validators/rateCard.validators";
+import type { CalculationFieldsInput, CreateRateCardInput, UpdateRateCardInput } from "../validators/rateCard.validators";
 
 const MODULE = "RATE_CARD";
+
+const SLAB_KEYS = ["o1", "o2", "o3", "o4", "o5", "o6", "o7", "mg1", "mg2", "mg3", "mg4", "mg5", "mg6", "mg7", "var1", "var2", "var3", "var4", "var5", "var6", "var7"] as const;
+
+/** Pulls the Calculation Engine fields (Minimum Login Hours, O/MG/Var
+ * slabs, weekly F+V config) out of a create/update input, normalizing
+ * `undefined` to `null` so Prisma clears a slab the user removed rather
+ * than leaving a stale value untouched. */
+function calculationFieldsFromInput(input: CalculationFieldsInput) {
+  const fields: Record<string, unknown> = {
+    minimumLoginHours: input.minimumLoginHours ?? null,
+    weeklyPayConfig: input.weeklyPayConfig ?? null,
+  };
+  for (const key of SLAB_KEYS) {
+    fields[key] = input[key] ?? null;
+  }
+  return fields;
+}
 
 /** Strips relations/internal fields so history snapshots and audit diffs stay clean. */
 function toSnapshot(rateCard: {
@@ -22,6 +39,29 @@ function toSnapshot(rateCard: {
   orderIncentive: unknown;
   status: string;
   version: number;
+  minimumLoginHours?: unknown;
+  o1?: unknown;
+  o2?: unknown;
+  o3?: unknown;
+  o4?: unknown;
+  o5?: unknown;
+  o6?: unknown;
+  o7?: unknown;
+  mg1?: unknown;
+  mg2?: unknown;
+  mg3?: unknown;
+  mg4?: unknown;
+  mg5?: unknown;
+  mg6?: unknown;
+  mg7?: unknown;
+  var1?: unknown;
+  var2?: unknown;
+  var3?: unknown;
+  var4?: unknown;
+  var5?: unknown;
+  var6?: unknown;
+  var7?: unknown;
+  weeklyPayConfig?: unknown;
 }) {
   return {
     rcType: rateCard.rcType,
@@ -34,6 +74,29 @@ function toSnapshot(rateCard: {
     orderIncentive: rateCard.orderIncentive,
     status: rateCard.status,
     version: rateCard.version,
+    minimumLoginHours: rateCard.minimumLoginHours ?? null,
+    o1: rateCard.o1 ?? null,
+    o2: rateCard.o2 ?? null,
+    o3: rateCard.o3 ?? null,
+    o4: rateCard.o4 ?? null,
+    o5: rateCard.o5 ?? null,
+    o6: rateCard.o6 ?? null,
+    o7: rateCard.o7 ?? null,
+    mg1: rateCard.mg1 ?? null,
+    mg2: rateCard.mg2 ?? null,
+    mg3: rateCard.mg3 ?? null,
+    mg4: rateCard.mg4 ?? null,
+    mg5: rateCard.mg5 ?? null,
+    mg6: rateCard.mg6 ?? null,
+    mg7: rateCard.mg7 ?? null,
+    var1: rateCard.var1 ?? null,
+    var2: rateCard.var2 ?? null,
+    var3: rateCard.var3 ?? null,
+    var4: rateCard.var4 ?? null,
+    var5: rateCard.var5 ?? null,
+    var6: rateCard.var6 ?? null,
+    var7: rateCard.var7 ?? null,
+    weeklyPayConfig: rateCard.weeklyPayConfig ?? null,
   };
 }
 
@@ -89,6 +152,7 @@ export const RateCardService = {
       status: "ACTIVE",
       version: 1,
       createdBy: actor.email,
+      ...calculationFieldsFromInput(input),
     };
 
     const rateCard = existing
@@ -134,6 +198,7 @@ export const RateCardService = {
       weeklyIncentive: input.weeklyIncentive ?? null,
       orderIncentive: input.orderIncentive ?? null,
       version: existing.version + 1,
+      ...calculationFieldsFromInput(input),
     });
 
     await AuditLogService.record({
@@ -261,6 +326,11 @@ export const RateCardService = {
       throw new NotFoundError("Rate card");
     }
     return RateCardRepository.getHistory(id);
+  },
+
+  async getRecentHistory(weekStartDateInput: string, limit = 10) {
+    const weekStartDate = parseWeekStart(weekStartDateInput);
+    return RateCardRepository.getRecentHistoryForWeek(weekStartDate, limit);
   },
 
   async getAuditLogs(params: {
