@@ -7,11 +7,13 @@ export const createUserSchema = z.object({
   role: z.enum(ROLES, { errorMap: () => ({ message: "Select a valid role." }) }),
   password: z.string().min(8, "Password must be at least 8 characters."),
 });
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const updateUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
   role: z.enum(ROLES, { errorMap: () => ({ message: "Select a valid role." }) }),
 });
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const updateUserStatusSchema = z.object({
   isActive: z.boolean(),
