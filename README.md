@@ -1,115 +1,104 @@
-# Shadowfax Amazon Rider Payout Arrears Management System
+# Payout Calculator Amazon
 
-Pre-deployment audit completed this phase. This README reflects the
-current state only.
+A static, browser-only tool that computes weekly rider arrear payouts (MG / Var / F+V,
+including tiered slabs and EPH balancing) from your uploaded rate-card and activity files.
+Nothing is uploaded anywhere — all parsing and calculation happens in the visitor's browser.
 
-## This phase: pre-deployment audit for Vercel + Render + TiDB Cloud
+## Files
 
-**One real bug found and fixed** — and it's worth being upfront about how:
-`user.service.ts` imported `CreateUserInput`/`UpdateUserInput` from
-`user.validators.ts`, but those types were never actually exported there
-(only the zod *schemas* were). This is a genuine `TS2305` compile error
-that should have been caught immediately when User Management was first
-built. It survived several "clean" verification passes in earlier phases
-because my own filtering pattern (excluding lines containing "has no
-exported member") was too broad — it was written to filter out the known
-Prisma-generation cascade, but this bug's error message happened to share
-the same phrase for an unrelated reason. Running the *actual* `npm run
-build` command (not just `tsc --noEmit --skipLibCheck`) during this audit,
-and reading the full unfiltered output line-by-line instead of trusting
-the filter, is what caught it. Fixed by exporting the inferred types,
-matching the pattern used in every other validators file. Re-verified with
-a precise filter (matching only the literal generated-client path, plus
-manual spot-checks confirming every remaining implicit-any error is
-genuinely downstream of the same Prisma-generation gap) — 78 remaining
-build errors, all explained, zero unaccounted for.
+- `index.html` — page shell, loads the two files below
+- `styles.css` — all styling
+- `app.js` — all logic: file parsing, the MG/Var/F+V calculation engine, the Considered
+  rules engine, duplicate/new-store checks, and the .xlsx export
 
-**Critical deployment-blocking fix**: `package.json`'s `build` script never
-ran `prisma generate`. On Render, `npm install` would have left
-`@prisma/client` as the unconfigured stub package (no models matching the
-actual schema) — the deployed app would crash on its very first database
-query. Added `"postinstall": "prisma generate"`, the standard pattern for
-exactly this class of platform. Verified the script wiring triggers
-correctly; the actual generation still can't complete *in this sandbox*
-specifically (no route to `binaries.prisma.sh` — the same limitation noted
-in every phase of this project), but that's a sandbox network restriction,
-not a configuration problem, and won't apply on Render's real infrastructure.
+There is no build step and no server code. Editing behavior means editing `app.js` directly.
 
-**No `.gitignore` existed anywhere in the project until now.** Since the
-repo has already been pushed to GitHub, I can't see from here whether
-`node_modules` or a real `.env` file got committed in an earlier commit —
-added a proper `.gitignore` now, but **you should check the actual GitHub
-repo** (`git log --all --full-history -- "**/node_modules" ".env"` locally,
-or just browse the repo) and remove/purge anything sensitive that's
-already there. A `.gitignore` added now only prevents *future* commits
-from including these — it doesn't retroactively clean history.
+## Run it locally
 
-**No migrations exist** — `prisma migrate dev` has never successfully run
-against a real database in this sandbox (same network restriction). This
-means `prisma migrate deploy` (the standard production migration command)
-would have nothing to apply. Two paths forward, documented in Environment
-section below: generate migrations locally first, or use `prisma db push`
-directly against TiDB Cloud as a simpler initial-setup alternative.
+You can just double-click `index.html` to open it in a browser — no install needed.
+(If your browser blocks local file access for the CDN scripts, run a tiny local server
+instead: `python3 -m http.server 8000`, then open `http://localhost:8000`.)
 
-**Added `render.yaml`** — codifies root directory (`backend`), build
-command, start command, and required env var names, so Render's setup
-needs zero manual dashboard configuration beyond pasting in the actual
-secret values.
+## Deploy to Vercel (free, permanent)
 
-**Enhanced both `.env.example` files** with deployment-specific guidance —
-notably TiDB Cloud's TLS requirement (`?sslaccept=strict` in the connection
-string), which is a common, easy-to-miss gotcha for exactly this database.
+1. **Create a GitHub repo.**
+   - Go to github.com &rarr; New repository &rarr; name it (e.g. `arrear-payout-console`) &rarr; Create.
+2. **Push these three files to it.**
+   ```bash
+   git init
+   git add index.html styles.css app.js README.md
+   git commit -m "Initial arrear payout console"
+   git branch -M main
+   git remote add origin https://github.com/<your-username>/arrear-payout-console.git
+   git push -u origin main
+   ```
+3. **Import into Vercel.**
+   - Go to vercel.com &rarr; sign in with your GitHub account &rarr; "Add New..." &rarr; "Project".
+   - Select the repo you just pushed.
+   - Framework Preset: choose **"Other"** (it's a plain static site, no build step needed).
+   - Leave Build Command and Output Directory blank.
+   - Click **Deploy**.
+4. **You're live.** Vercel gives you a permanent URL like `arrear-payout-console.vercel.app`.
 
-**Verified, not assumed**: fresh `npm install` + full production build on
-both backend and frontend, ESLint clean, ~78 backend build "errors" fully
-traced and explained (not just counted), lockfiles present for
-reproducible installs, ~~next-env.d.ts~~ correctly left committed per
-Next.js convention.
+## Making changes later
 
-## Pre-deployment checklist (do these before deploying)
+Any time you edit `app.js` (fix a formula, add a rule, change a threshold) and push to
+GitHub (`git add -A && git commit -m "..." && git push`), Vercel automatically rebuilds
+and redeploys — usually within 30 seconds. No manual redeploy step.
 
-1. **Verify the GitHub repo doesn't already contain secrets/node_modules**
-   from before this `.gitignore` existed (see above).
-2. **Generate a Prisma migration** in an environment with real network
-   access: `cd backend && npx prisma migrate dev --name init`, commit the
-   resulting `prisma/migrations/` folder. Alternative: skip migrations
-   entirely for now and run `npx prisma db push` directly against TiDB
-   Cloud once `DATABASE_URL` is set — simpler for initial setup, but you
-   lose migration history going forward.
-3. **Render**: create a Web Service from this repo — `render.yaml` should
-   auto-detect the config, or set manually: Root Directory `backend`,
-   Build Command `npm install && npm run build`, Start Command
-   `npm start`. Set `DATABASE_URL` (from TiDB Cloud, with `?sslaccept=strict`),
-   `JWT_SECRET` (a real random string, not the placeholder), and
-   `CORS_ORIGIN` (your Vercel URL, once known) as environment variables.
-4. **Vercel**: import the repo, set Root Directory to `frontend` (Vercel
-   auto-detects Next.js, no framework preset changes needed). Set
-   `NEXT_PUBLIC_API_BASE_URL` to your Render backend URL + `/api`.
-5. **After both are live**: run `npm run prisma:seed` against the
-   production database once (creates the initial admin user) — either
-   locally with `DATABASE_URL` pointed at TiDB Cloud, or via Render's shell.
+## Where things live
 
-## What's still genuinely incomplete (unrelated to deployment readiness)
+- **Weekly data** (RC, Orders, Login Hours, Valinor Added Data) — exactly four uploads on
+  the Upload tab. Conditions, Var Conditions, and F+V Conditions are generated
+  automatically from the RC workbook the moment you pick the week's tab; nothing else to
+  upload for those.
+- **Considered Rules** (the Y/N payout classification table) is saved in the browser's
+  local storage automatically, so it persists between visits on the same computer/browser.
+  Use the **Export rules (.json)** button on the Rules tab to back it up or move it to
+  another machine — **Import rules (.json)** loads it back in.
+- **MG-type hub rates** (Min Orders / MG Amount) are also remembered automatically in the
+  browser's local storage after every run. RC doesn't reliably store these for MG-type
+  hubs, so the app carries forward whatever it saw last time it had good data for a given
+  hub, without needing a separate "last week's file" upload. The very first time you run
+  it (empty memory), any MG hub RC leaves blank shows up as a review item asking you to
+  fill it in once — after that, it's remembered automatically. Note this memory is
+  per-browser; switching computers means those few hubs need a one-time manual entry again
+  (easy to do directly in the editable Conditions table on the Review Rates tab).
 
-Special Incentives (no formula ever given), RBAC read-endpoint gating,
-forced password-change enforcement, zero automated tests. None of these
-block deployment — they're feature-completeness gaps, not build/runtime
-failures.
+## The flow
 
-## Running it locally
+1. **Upload Data** — RC workbook (pick the week's tab), Orders, Login Hours, Valinor Added
+   Data. Conditions/Var Conditions/F+V Conditions generate automatically as soon as the RC
+   tab is selected.
+2. **Review Rates** — the generated Conditions table (top) and Var Conditions table
+   (below it) are both directly editable — click any cell and change it. Also shows
+   anything flagged during generation, duplicate hub entries, and new stores not yet in
+   Conditions.
+3. **Considered Rules** — edit the Y/N payout classification rules, then run the
+   computation from here.
+4. **Results** — MG / Var / F+V tables, totals, and the downloadable `.xlsx`.
 
-```bash
-# Backend
-cd backend
-cp .env.example .env
-npm install   # postinstall runs `prisma generate` automatically
-npx prisma migrate dev --name init   # or: npx prisma db push
-npm run prisma:seed
-npm run dev
+## Generating Conditions from RC — reliability notes
 
-# Frontend
-cd frontend
-cp .env.local.example .env.local
-npm install
-npm run dev
-```
+- **V-type and F+V/F+V1/F+V2/F+V3-type hubs**: fully reliable — derived directly from RC's
+  order-threshold and payout columns, including the tiered ladders. Validated against real
+  data with zero mismatches.
+- **MG-type hubs**: partially reliable. MG Amount and Var Pay usually come straight from
+  RC (about 85% of hubs in testing); **Min Orders is not reliably stored in RC at all**
+  for MG-type hubs — it always relies on the browser-memory carry-forward described above.
+
+Anything the generator isn't confident about — a missing rate, a non-numeric RC cell, a
+carried-forward value — is never silently guessed. It shows up as a review item on the
+**Review Rates** tab so you can verify or correct it before computing.
+
+## Known limitations to test against your real data
+
+- EPH Balancing thresholds are read per-hub from the Conditions file's `EPH Eligible`,
+  `EPH Min Hours`, `EPH Min Orders`, and `EPH Amount` columns. If your Conditions file
+  doesn't have these columns yet, EPH defaults to *not eligible* for every hub.
+- F+V / F+V1 / F+V2 / F+V3 tiers must be supplied via the new **F+V Conditions** file
+  (same shape as Var Conditions: hub_name, RC Type, O1–O7, Amt1–Amt7). This table didn't
+  exist before — you'll need to build it once from the RC.
+- The Considered Rules list is a starting point seeded from real patterns found in past
+  Valinor data. Any payout title that doesn't match a rule is excluded and flagged on the
+  Results tab and the Rules tab — check that list every week until it stabilizes.

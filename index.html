@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payout Calculator Amazon</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 108 108'%3E%3Cpath fill='%233B8672' d='M5,0 L32.6,10 L58.6,20 L84.6,30 Q100,40 93,50 L83.3,60 L33.9,70 L30.8,80 L28.2,90 Q20.5,101 20.5,101 Q20.5,101 14.1,90 L12.3,80 L10.6,70 L8.8,60 L7.5,50 L5.7,40 L4,30 L2.2,20 L0.9,10 Q0,0 5,0 Z'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#132A24">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="-4 -4 108 108" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#D4D14E" d="M5,0 L32.6,10 L58.6,20 L84.6,30 Q100,40 93,50 L83.3,60 L33.9,70 L30.8,80 L28.2,90 Q20.5,101 20.5,101 Q20.5,101 14.1,90 L12.3,80 L10.6,70 L8.8,60 L7.5,50 L5.7,40 L4,30 L2.2,20 L0.9,10 Q0,0 5,0 Z"/>
+    </svg>
+    <span>SHADOWFAX</span>
+    <small>Think ahead! &middot; Payout Calculator</small>
+  </div>
+  <nav id="navtabs"></nav>
+</div>
+
+<div id="bgDecor" aria-hidden="true">
+  <svg viewBox="-4 -4 108 108" width="46" height="46" xmlns="http://www.w3.org/2000/svg">
+    <path fill="none" stroke="#3B8672" stroke-width="2.5" opacity="0.35" d="M5,0 L32.6,10 L58.6,20 L84.6,30 Q100,40 93,50 L83.3,60 L33.9,70 L30.8,80 L28.2,90 Q20.5,101 20.5,101 Q20.5,101 14.1,90 L12.3,80 L10.6,70 L8.8,60 L7.5,50 L5.7,40 L4,30 L2.2,20 L0.9,10 Q0,0 5,0 Z"/>
+  </svg>
+  <svg viewBox="-4 -4 108 108" width="30" height="30" xmlns="http://www.w3.org/2000/svg" style="margin-left:-14px;">
+    <path fill="none" stroke="#3B8672" stroke-width="3" opacity="0.3" d="M5,0 L32.6,10 L58.6,20 L84.6,30 Q100,40 93,50 L83.3,60 L33.9,70 L30.8,80 L28.2,90 Q20.5,101 20.5,101 Q20.5,101 14.1,90 L12.3,80 L10.6,70 L8.8,60 L7.5,50 L5.7,40 L4,30 L2.2,20 L0.9,10 Q0,0 5,0 Z"/>
+  </svg>
+  <svg viewBox="-4 -4 108 108" width="60" height="60" xmlns="http://www.w3.org/2000/svg" style="margin-top:6px;">
+    <path fill="#D4D14E" opacity="0.9" d="M5,0 L32.6,10 L58.6,20 L84.6,30 Q100,40 93,50 L83.3,60 L33.9,70 L30.8,80 L28.2,90 Q20.5,101 20.5,101 Q20.5,101 14.1,90 L12.3,80 L10.6,70 L8.8,60 L7.5,50 L5.7,40 L4,30 L2.2,20 L0.9,10 Q0,0 5,0 Z"/>
+  </svg>
+</div>
+
+<div id="main"></div>
+
+<div id="modalWrap"><div id="modalCard"></div></div>
+
+<script src="app.js"></script>
+</body>
+</html>
